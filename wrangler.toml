@@ -1,0 +1,28 @@
+name = "cotly"
+main = "src/index.ts"
+compatibility_date = "2025-04-01"
+
+[assets]
+directory = "./dist/client"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "cotly-db"
+database_id = "REPLACE_WITH_REAL_D1_ID_ON_DEPLOY"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "cotly-media"
+
+[triggers]
+crons = ["* * * * *"]
+
+[vars]
+APP_URL = "http://localhost:8787"
+ALLOW_REGISTRATION = "false"
+MOCK_SOCIAL_ENABLED = "true"
+MEDIA_RETENTION_HOURS = "48"

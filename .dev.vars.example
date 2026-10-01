@@ -1,0 +1,21 @@
+# Copy to .dev.vars for local dev. Never commit .dev.vars.
+ENCRYPTION_SECRET=change-me-at-least-32-random-chars
+SESSION_SECRET=change-me-at-least-32-random-chars
+APP_URL=http://localhost:8787
+MOCK_SOCIAL_ENABLED=true
+MEDIA_RETENTION_HOURS=48
+
+# OAuth provider apps (leave blank until configured; adapters must degrade gracefully)
+META_CLIENT_ID=
+META_CLIENT_SECRET=
+THREADS_CLIENT_ID=
+THREADS_CLIENT_SECRET=
+LINKEDIN_CLIENT_ID=
+LINKEDIN_CLIENT_SECRET=
+X_CLIENT_ID=
+X_CLIENT_SECRET=
+
+# R2 S3 credentials for presigned direct uploads (create in Cloudflare dash -> R2 -> Manage API tokens)
+R2_ACCOUNT_ID=
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=

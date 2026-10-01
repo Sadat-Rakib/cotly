@@ -1,0 +1,100 @@
+import type { PlatformCapabilities, Provider } from './types';
+
+// Central capability registry (PRD #23). Validation, composer warnings and
+// adapter behavior all read from here — never scatter limits elsewhere.
+export const CAPABILITIES: Record<Provider, PlatformCapabilities> = {
+  facebook: {
+    text: true,
+    images: true,
+    maxImages: 10,
+    video: true,
+    maxVideoMB: 1024,
+    maxCaptionChars: 63206,
+    mediaRequired: false,
+    directPublish: true,
+  },
+  threads: {
+    text: true,
+    images: true,
+    maxImages: 20,
+    video: true,
+    maxVideoMB: 1024,
+    maxCaptionChars: 500,
+    mediaRequired: false,
+    directPublish: true,
+  },
+  linkedin: {
+    text: true,
+    images: true,
+    maxImages: 20,
+    video: true,
+    maxVideoMB: 200,
+    maxCaptionChars: 3000,
+    mediaRequired: false,
+    directPublish: true,
+  },
+  bluesky: {
+    text: true,
+    images: true,
+    maxImages: 4,
+    video: false,
+    maxVideoMB: 0,
+    maxCaptionChars: 300,
+    mediaRequired: false,
+    directPublish: true,
+  },
+  instagram: {
+    text: true,
+    images: true,
+    maxImages: 10,
+    video: true,
+    maxVideoMB: 100,
+    maxCaptionChars: 2200,
+    mediaRequired: true,
+    directPublish: true,
+  },
+  x: {
+    text: true,
+    images: true,
+    maxImages: 4,
+    video: true,
+    maxVideoMB: 512,
+    maxCaptionChars: 280,
+    mediaRequired: false,
+    directPublish: true,
+  },
+  reddit: {
+    text: true,
+    images: false,
+    maxImages: 0,
+    video: false,
+    maxVideoMB: 0,
+    maxCaptionChars: 40000,
+    mediaRequired: false,
+    directPublish: false,
+  },
+  mock: {
+    text: true,
+    images: true,
+    maxImages: 10,
+    video: true,
+    maxVideoMB: 1024,
+    maxCaptionChars: 10000,
+    mediaRequired: false,
+    directPublish: true,
+  },
+  assisted: {
+    text: true,
+    images: true,
+    maxImages: 10,
+    video: true,
+    maxVideoMB: 1024,
+    maxCaptionChars: 100000,
+    mediaRequired: false,
+    directPublish: false,
+  },
+};
+
+export function getCapabilities(provider: Provider): PlatformCapabilities {
+  return CAPABILITIES[provider];
+}

@@ -1,0 +1,171 @@
+// Shared adapter plumbing: safe provider calls, error mapping, media sharing.
+// Constraint: tokens/secrets must never appear in thrown or returned error text.
+import { AwsClient } from 'aws4fetch';
+import type { Env } from '../contracts/env';
+import type { MediaRecord, PublishOutcome } from '../contracts/types';
+
+const FETCH_TIMEOUT_MS = 30_000;
+const RAW_SUMMARY_MAX = 300;
+export type Secrets = (string | undefined | null)[];
+
+export class OutcomeError extends Error {
+  constructor(readonly outcome: PublishOutcome) {
+    super('provider_outcome');
+  }
+}
+
+export interface ProviderResponse {
+  ok: boolean;
+  status: number;
+  data: unknown;
+  raw: string;
+  headers: Headers;
+}
+
+export function redact(text: string, secrets: Secrets): string {
+  let out = text;
+  for (const s of secrets) {
+    if (s && s.length > 8) out = out.split(s).join('[redacted]');
+  }
+  return out;
+}
+
+export function truncate(text: string, max = RAW_SUMMARY_MAX): string {
+  return text.length <= max ? text : `${text.slice(0, max)}...`;
+}
+
+// Throws (never returns) — publish() catches these and converts to the outcome.
+export function fail(secrets: Secrets, errorCode: string, errorMessage: string, raw?: string): OutcomeError {
+  return new OutcomeError({
+    kind: 'failed',
+    retryable: false,
+    errorCode,
+    errorMessage: redact(errorMessage, secrets),
+    ...(raw !== undefined ? { raw: truncate(redact(raw, secrets)) } : {}),
+  });
+}
+
+export function failRetryable(secrets: Secrets, errorCode: string, errorMessage: string, raw?: string): OutcomeError {
+  return new OutcomeError({
+    kind: 'failed',
+    retryable: true,
+    errorCode,
+    errorMessage: redact(errorMessage, secrets),
+    ...(raw !== undefined ? { raw: truncate(redact(raw, secrets)) } : {}),
+  });
+}
+
+export function needsReconnect(secrets: Secrets, reason: string): OutcomeError {
+  return new OutcomeError({ kind: 'needs_reconnect', reason: redact(reason, secrets) });
+}
+
+export function outcomeFromError(e: unknown): PublishOutcome {
+  if (e instanceof OutcomeError) return e.outcome;
+  return {
+    kind: 'failed',
+    retryable: false,
+    errorCode: 'EUNKNOWN',
+    errorMessage: 'Publishing failed unexpectedly. Check diagnostics for details.',
+  };
+}
+
+// Every provider call goes through here: 30s timeout, network errors become retryable failures.
+export async function httpJson(url: string, init: RequestInit = {}): Promise<ProviderResponse> {
+  let res: Response;
+  try {
+    res = await fetch(url, { ...init, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+  } catch (e) {
+    const name = (e as Error | undefined)?.name;
+    if (name === 'TimeoutError' || name === 'AbortError') {
+      throw new OutcomeError({
+        kind: 'failed',
+        retryable: true,
+        errorCode: 'ETIMEDOUT',
+        errorMessage: 'The platform did not respond in time. Cotly will retry automatically.',
+      });
+    }
+    throw new OutcomeError({
+      kind: 'failed',
+      retryable: true,
+      errorCode: 'ENETWORK',
+      errorMessage: 'Cotly could not reach the platform. Cotly will retry automatically.',
+    });
+  }
+  const text = await res.text();
+  let data: unknown = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = null;
+    }
+  }
+  return { ok: res.ok, status: res.status, data, raw: truncate(text), headers: res.headers };
+}
+
+export function requireId(resp: ProviderResponse, secrets: Secrets, platformName: string): string {
+  const id = (resp.data as { id?: unknown } | null)?.id;
+  if (typeof id === 'string' && id) return id;
+  throw fail(secrets, 'NO_POST_ID', `${platformName} did not return an id for the published content.`, resp.raw);
+}
+
+// Meta Graph error mapping (Facebook + Threads share the error shape).
+export function graphError(resp: ProviderResponse, secrets: Secrets, platformName: 'Facebook' | 'Threads'): OutcomeError {
+  const gerr = (resp.data as { error?: Record<string, unknown> } | null)?.error ?? {};
+  const code = Number(gerr.code ?? 0);
+  const message =
+    (typeof gerr.error_user_msg === 'string' && gerr.error_user_msg) ||
+    (typeof gerr.message === 'string' && gerr.message) ||
+    '';
+  if (resp.status === 429 || code === 4 || code === 17 || code === 613) {
+    return failRetryable(
+      secrets,
+      'RATE_LIMITED',
+      `${platformName} is temporarily rate limiting this account. Cotly will retry automatically.`,
+      resp.raw,
+    );
+  }
+  if (code === 190 || code === 102 || /access token/i.test(message)) {
+    return needsReconnect(secrets, `Your ${platformName} connection expired. Reconnect ${platformName} and retry.`);
+  }
+  return fail(secrets, `GRAPH_${code || resp.status}`, message || 'The platform rejected this request.', resp.raw);
+}
+
+// OAuth error redirect (provider sent ?error= instead of ?code=).
+export function oauthError(params: URLSearchParams, platformName: string): void {
+  const err = params.get('error');
+  if (err) {
+    const desc = params.get('error_description') || err;
+    throw new Error(`${platformName} declined the connection: ${redact(desc, [])}`);
+  }
+}
+
+export async function mediaBytes(env: Env, media: MediaRecord): Promise<Uint8Array<ArrayBuffer>> {
+  const obj = await env.MEDIA.get(media.r2Key);
+  if (!obj) {
+    throw fail([], 'MEDIA_MISSING', 'The attached media file could not be found in storage. Re-upload it and try again.');
+  }
+  return new Uint8Array(await obj.arrayBuffer());
+}
+
+export function r2SigningConfigured(env: Env): boolean {
+  return Boolean(env.R2_ACCOUNT_ID && env.R2_ACCESS_KEY_ID && env.R2_SECRET_ACCESS_KEY);
+}
+
+export const MEDIA_SIGNING_NOT_CONFIGURED =
+  'R2 public media signing is not configured. Add R2_ACCOUNT_ID, R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY so Cotly can share media with the platform.';
+
+// URL-based providers fetch media over HTTPS, so hand them a ~1h signed GET URL on the R2 S3 endpoint.
+export async function presignMediaGet(env: Env, r2Key: string): Promise<string> {
+  if (!r2SigningConfigured(env)) {
+    throw fail([], 'MEDIA_SIGNING_NOT_CONFIGURED', MEDIA_SIGNING_NOT_CONFIGURED);
+  }
+  const client = new AwsClient({
+    accessKeyId: env.R2_ACCESS_KEY_ID as string,
+    secretAccessKey: env.R2_SECRET_ACCESS_KEY as string,
+  });
+  const url = new URL(`https://${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com/cotly-media/${r2Key}`);
+  url.searchParams.set('X-Amz-Expires', '3600');
+  const signed = await client.sign(new Request(url, { method: 'GET' }), { aws: { signQuery: true } });
+  return signed.url;
+}

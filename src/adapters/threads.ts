@@ -1,0 +1,147 @@
+import { getCapabilities } from '../contracts/capabilities';
+import type { Env } from '../contracts/env';
+import type { PlatformAdapter, PublishInput, PublishOutcome, SocialAccountRecord } from '../contracts/types';
+import {
+  fail,
+  graphError,
+  httpJson,
+  oauthError,
+  outcomeFromError,
+  presignMediaGet,
+  requireId,
+  type ProviderResponse,
+  type Secrets,
+} from './_shared';
+
+const DIALOG = 'https://threads.net/oauth/authorize';
+const TOKEN = 'https://graph.threads.net/oauth/access_token';
+const GRAPH = 'https://graph.threads.net/v1.0';
+export const SCOPE = 'threads_basic,threads_content_publish';
+const MAX_CHARS = 500;
+
+const secretsOf = (env: Env, token?: string): Secrets => [token, env.THREADS_CLIENT_SECRET];
+
+export class ThreadsAdapter implements PlatformAdapter {
+  readonly provider = 'threads' as const;
+  readonly capabilities = getCapabilities('threads');
+
+  async buildAuthUrl(env: Env, redirectUri: string, state: string): Promise<{ url: string }> {
+    if (!env.THREADS_CLIENT_ID) {
+      throw new Error('Threads OAuth is not configured. Set THREADS_CLIENT_ID and THREADS_CLIENT_SECRET first.');
+    }
+    const u = new URL(DIALOG);
+    u.searchParams.set('client_id', env.THREADS_CLIENT_ID);
+    u.searchParams.set('redirect_uri', redirectUri);
+    u.searchParams.set('state', state);
+    u.searchParams.set('response_type', 'code');
+    u.searchParams.set('scope', SCOPE);
+    return { url: u.toString() };
+  }
+
+  async handleCallback(env: Env, params: URLSearchParams) {
+    const secrets = secretsOf(env);
+    oauthError(params, 'Threads');
+    const code = params.get('code');
+    if (!code) throw new Error('Threads did not return an authorization code. Try connecting again.');
+    const tok = await httpJson(TOKEN, {
+      method: 'POST',
+      body: new URLSearchParams({
+        client_id: env.THREADS_CLIENT_ID ?? '',
+        client_secret: env.THREADS_CLIENT_SECRET ?? '',
+        grant_type: 'authorization_code',
+        redirect_uri: `${env.APP_URL}/oauth/threads/callback`,
+        code,
+      }),
+    });
+    if (!tok.ok || typeof (tok.data as { access_token?: unknown } | null)?.access_token !== 'string') {
+      throw new Error('Threads rejected the connection attempt. Verify the app credentials and try again.');
+    }
+    const accessToken = String((tok.data as { access_token: string }).access_token);
+    const me = await httpJson(`${GRAPH}/me?fields=id,username,threads_profile_image_url`, {
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    if (!me.ok) {
+      throw new Error('Cotly could not read your Threads profile. Confirm the app has threads_basic and try again.');
+    }
+    const data = me.data as { id?: string; username?: string; threads_profile_image_url?: string } | null;
+    if (!data?.id) throw new Error('Threads did not return a profile id. Try connecting again.');
+    return {
+      account: {
+        externalId: data.id,
+        displayName: data.username || 'Threads user',
+        ...(data.threads_profile_image_url ? { avatarUrl: data.threads_profile_image_url } : {}),
+      },
+      tokens: { accessToken },
+      scopes: SCOPE,
+    };
+  }
+
+  // Two-step: container, then publish. The container is returned as the pending
+  // externalId; resolvePending polls it until the media is FINISHED.
+  async publish(env: Env, input: PublishInput): Promise<PublishOutcome> {
+    const secrets = secretsOf(env, input.account.accessToken);
+    try {
+      if (input.caption.length > MAX_CHARS) {
+        throw fail(secrets, 'CAPTION_TOO_LONG', `Threads captions are limited to ${MAX_CHARS} characters. Shorten the caption and retry.`);
+      }
+      const uid = input.account.externalId;
+      const images = input.media.filter((m) => m.mime.startsWith('image/'));
+      const videos = input.media.filter((m) => m.mime.startsWith('video/'));
+      const video = videos[0];
+      const firstImage = images[0];
+      if (videos.length > 1 || images.length > 1) {
+        throw fail(secrets, 'TOO_MANY_MEDIA', 'Cotly currently publishes one image or one video per Threads post. Remove the extra media and retry.');
+      }
+      const params = new URLSearchParams({ media_type: 'TEXT', text: input.caption });
+      if (video) {
+        params.set('media_type', 'VIDEO');
+        params.set('video_url', await presignMediaGet(env, video.r2Key));
+      } else if (firstImage) {
+        params.set('media_type', 'IMAGE');
+        params.set('image_url', await presignMediaGet(env, firstImage.r2Key));
+      }
+      const container = await this.post(secrets, `/${uid}/threads_media`, params);
+      const containerId = requireId(container, secrets, 'Threads');
+      const pub = await this.post(secrets, `/${uid}/threads_publish`, new URLSearchParams({ creation_id: containerId }));
+      return { kind: 'pending', externalId: containerId, ...(pub.raw ? { raw: pub.raw } : {}) };
+    } catch (e) {
+      return outcomeFromError(e);
+    }
+  }
+
+  async resolvePending(env: Env, account: SocialAccountRecord, externalId: string): Promise<PublishOutcome> {
+    const secrets = secretsOf(env, account.accessToken);
+    try {
+      const resp = await httpJson(`${GRAPH}/${externalId}?fields=status_code,status,error_message,permalink`, {
+        headers: { authorization: `Bearer ${secrets[0] ?? ''}` },
+      });
+      if (!resp.ok) throw graphError(resp, secrets, 'Threads');
+      const data = (resp.data ?? {}) as { status_code?: string; status?: string; error_message?: string; permalink?: string };
+      const status = data.status_code ?? data.status ?? '';
+      if (status === 'FINISHED') {
+        return {
+          kind: 'confirmed',
+          externalId,
+          ...(data.permalink ? { permalink: data.permalink } : {}),
+          ...(resp.raw ? { raw: resp.raw } : {}),
+        };
+      }
+      if (status === 'ERROR' || status === 'EXPIRED' || data.error_message) {
+        throw fail(secrets, 'CONTAINER_ERROR', data.error_message || 'Threads failed to process this post.', resp.raw);
+      }
+      return { kind: 'pending', externalId };
+    } catch (e) {
+      return outcomeFromError(e);
+    }
+  }
+
+  private async post(secrets: Secrets, path: string, body: URLSearchParams): Promise<ProviderResponse> {
+    const resp = await httpJson(`${GRAPH}${path}`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${secrets[0] ?? ''}` },
+      body,
+    });
+    if (!resp.ok) throw graphError(resp, secrets, 'Threads');
+    return resp;
+  }
+}
