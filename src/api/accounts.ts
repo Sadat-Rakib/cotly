@@ -2,6 +2,7 @@ import type { Env } from '../contracts/env';
 import type { AccountTokens, PlatformAdapter, Provider, SocialAccountRecord } from '../contracts/types';
 import { decryptSecret, encryptSecret, randomId } from '../lib/crypto';
 import { HttpError, json, readJson } from '../lib/http';
+import { parseCookies } from '../lib/sessions';
 import { nowS, PROVIDER_LABEL } from './_shared';
 import { getAdapter } from '../adapters/registry';
 
@@ -230,7 +231,11 @@ export async function oauthStart(req: Request, env: Env, provider: string): Prom
 
 export async function oauthCallback(req: Request, env: Env, provider: string): Promise<Response> {
   const params = new URL(req.url).searchParams;
-  const redirect = (query: string): Response => Response.redirect(`${env.APP_URL}/accounts?${query}`, 302);
+  const secure = new URL(req.url).protocol === 'https:';
+  // Response.redirect() only accepts a numeric status in the DOM lib types, so
+  // build the 302 by hand to attach the page-choice cookie.
+  const redirect = (query: string, headers: Record<string, string> = {}): Response =>
+    new Response(null, { status: 302, headers: { Location: `${env.APP_URL}/accounts?${query}`, ...headers } });
   const fail = (message: string): Response => redirect(`error=${encodeURIComponent(message)}`);
   try {
     const state = params.get('state') ?? '';
@@ -244,9 +249,65 @@ export async function oauthCallback(req: Request, env: Env, provider: string): P
     const adapter = getAdapter(provider as Provider);
     if (!adapter.handleCallback) return fail(`${PROVIDER_LABEL[provider as Provider] ?? provider} does not support OAuth sign-in.`);
     const result = await adapter.handleCallback(env, params, row.verifier ?? undefined);
+    // More than one Page to choose from — park the user token and ask which Page.
+    if (result.pageChoice) {
+      const blob = await encryptSecret(env.ENCRYPTION_SECRET, JSON.stringify({ u: result.pageChoice.userToken, p: result.pageChoice.pages }));
+      return redirect(`choose_page=${encodeURIComponent(provider)}`, {
+        'set-cookie': `${PAGE_PICK_COOKIE}=${blob}; Path=/; Max-Age=900; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`,
+      });
+    }
+    if (!result.account || !result.tokens) return fail('The provider did not return an account to connect.');
     await upsertAccount(env, provider as Provider, result.account, result.tokens, result.scopes);
-    return redirect('connected=1');
+    return redirect(`connected=1&provider=${encodeURIComponent(provider)}`);
   } catch (err) {
     return fail(err instanceof Error && err.message ? err.message : 'Connecting this account failed. Try again.');
   }
+}
+
+// ---- Facebook Page picker ----
+// The OAuth user token lives only in this encrypted, httpOnly, 15-minute cookie
+// until the user picks a Page. Nothing is written to D1 before that choice.
+const PAGE_PICK_COOKIE = 'cotly_fb_pages';
+async function pagePickUserToken(req: Request, env: Env): Promise<string> {
+  const blob = parseCookies(req)[PAGE_PICK_COOKIE];
+  if (!blob) throw new HttpError(400, 'That Facebook connection attempt has expired. Connect Facebook again to choose a Page.');
+  let userToken: string;
+  try {
+    userToken = String((JSON.parse(await decryptSecret(env.ENCRYPTION_SECRET, blob)) as { u?: unknown }).u ?? '');
+  } catch {
+    throw new HttpError(400, 'That Facebook connection attempt has expired. Connect Facebook again to choose a Page.');
+  }
+  if (!userToken) throw new HttpError(400, 'That Facebook connection attempt has expired. Connect Facebook again to choose a Page.');
+  return userToken;
+}
+
+// GET /api/accounts/facebook/pages — Page names/ids only, never a token.
+export async function listFacebookPages(req: Request, env: Env): Promise<Response> {
+  const adapter = getAdapter('facebook');
+  if (!adapter.listPages) throw new HttpError(400, 'Choosing a Page is not available for Facebook yet.');
+  try {
+    return json({ pages: await adapter.listPages(env, await pagePickUserToken(req, env)) });
+  } catch (err) {
+    throw new HttpError(400, err instanceof Error && err.message ? err.message : 'Could not read your Facebook Pages.');
+  }
+}
+
+// POST /api/accounts/facebook/pages — connect the Page the user chose.
+export async function selectFacebookPage(req: Request, env: Env): Promise<Response> {
+  const body = await readJson(req);
+  const pageId = String(body.pageId ?? '');
+  if (!pageId) throw new HttpError(400, 'Choose a Page to connect.');
+  const adapter = getAdapter('facebook');
+  if (!adapter.pickPage) throw new HttpError(400, 'Choosing a Page is not available for Facebook yet.');
+  let picked: Awaited<ReturnType<NonNullable<PlatformAdapter['pickPage']>>>;
+  try {
+    picked = await adapter.pickPage(env, await pagePickUserToken(req, env), pageId);
+  } catch (err) {
+    throw new HttpError(400, err instanceof Error && err.message ? err.message : 'Could not connect that Page.');
+  }
+  const saved = await upsertAccount(env, 'facebook', picked.account, picked.tokens, picked.scopes);
+  const secure = new URL(req.url).protocol === 'https:';
+  return json(saved, 201, {
+    'set-cookie': `${PAGE_PICK_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`,
+  });
 }

@@ -50,6 +50,9 @@ async function route(req: Request, env: Env): Promise<Response> {
   }
   if (method === 'POST' && path === '/api/accounts/bluesky') return accounts.connectBluesky(req, env);
   if (method === 'POST' && path === '/api/accounts/mock') return accounts.connectMock(req, env);
+  if (method === 'GET' && path === '/api/accounts/facebook/pages') return accounts.listFacebookPages(req, env);
+  if (method === 'POST' && path === '/api/accounts/facebook/pages') return accounts.selectFacebookPage(req, env);
+  if (method === 'POST' && path === '/api/setup/test-meta') return setup.testMeta(env);
   if (method === 'GET' && seg.length === 4 && seg[1] === 'oauth' && seg[3] === 'start') {
     return accounts.oauthStart(req, env, seg[2] as string);
   }

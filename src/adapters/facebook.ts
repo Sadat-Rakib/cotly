@@ -62,9 +62,59 @@ export class FacebookAdapter implements PlatformAdapter {
     if (!pages.ok) {
       throw new Error('Cotly could not read your Facebook Pages. Confirm the app has pages_show_list and try again.');
     }
-    const page = (pages.data as { data?: Array<{ id?: string; name?: string; access_token?: string }> | null })?.data?.[0];
-    if (!page?.id) {
+    const all = ((pages.data as { data?: Array<{ id?: string; name?: string; access_token?: string }> | null })?.data ?? [])
+      .filter((p): p is { id: string; name?: string; access_token?: string } => typeof p.id === 'string' && p.id.length > 0);
+    if (all.length === 0) {
       throw new Error('No Facebook Page was found on this account. Cotly publishes to Pages — create a Page and connect again.');
+    }
+    // More than one Page: the user picks which one Cotly posts to. We hand the
+    // candidates back instead of silently binding to whichever Page came first.
+    if (all.length > 1) {
+      return {
+        pageChoice: {
+          userToken,
+          pages: all.map((p) => ({ id: p.id, name: p.name || 'Facebook Page' })),
+        },
+      };
+    }
+    const page = all[0] as { id: string; name?: string; access_token?: string };
+    return {
+      account: {
+        externalId: page.id,
+        displayName: page.name || 'Facebook Page',
+        meta: { pageId: page.id },
+      },
+      tokens: { accessToken: page.access_token ?? userToken },
+      scopes: SCOPE,
+    };
+  }
+
+  // Re-reads the Page list with the stored user token so the picker never has
+  // to carry page tokens around. Read-only.
+  async listPages(env: Env, userToken: string): Promise<Array<{ id: string; name: string }>> {
+    const res = await httpJson(`${GRAPH}/me/accounts?fields=id,name`, {
+      headers: { authorization: `Bearer ${userToken}` },
+    });
+    if (!res.ok) {
+      throw new Error('Facebook refused to list your Pages. The connection attempt has expired — connect again from the Accounts page.');
+    }
+    return ((res.data as { data?: Array<{ id?: string; name?: string }> | null })?.data ?? [])
+      .filter((p): p is { id: string; name?: string } => typeof p.id === 'string' && p.id.length > 0)
+      .map((p) => ({ id: p.id, name: p.name || 'Facebook Page' }));
+  }
+
+  // Exchanges the stored user token for the chosen Page's own token.
+  async pickPage(env: Env, userToken: string, pageId: string) {
+    const res = await httpJson(`${GRAPH}/me/accounts?fields=id,name,access_token`, {
+      headers: { authorization: `Bearer ${userToken}` },
+    });
+    if (!res.ok) {
+      throw new Error('Facebook refused to read your Pages. The connection attempt has expired — connect again from the Accounts page.');
+    }
+    const page = ((res.data as { data?: Array<{ id?: string; name?: string; access_token?: string }> | null })?.data ?? [])
+      .find((p) => p.id === pageId);
+    if (!page?.id) {
+      throw new Error('That Page is no longer available on this account. Connect Facebook again and pick a Page.');
     }
     return {
       account: {

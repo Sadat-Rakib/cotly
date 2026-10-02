@@ -80,6 +80,14 @@ export default function App() {
     navigate('/login');
   }, [navigate]);
 
+  // Login/setup only set a session cookie — /api/me must be refetched or the
+  // guard below still sees the logged-out state and bounces back to /login.
+  const refreshMe = useCallback(() => {
+    api<Me>('/api/me')
+      .then((m) => setMe(m))
+      .catch(() => setMe(null));
+  }, []);
+
   if (me === undefined) return LOADING;
 
   const authed = me !== null && me.isSetup;
@@ -100,9 +108,9 @@ export default function App() {
   if (path === '/') {
     page = <Landing navigate={navigate} />;
   } else if (path === '/login') {
-    page = <LoginPage onDone={() => navigate('/app/compose')} />;
+    page = <LoginPage onDone={() => { refreshMe(); navigate('/app/compose'); }} />;
   } else if (path === '/setup' && (!authed || !me.isSetup)) {
-    page = <SetupPage onDone={() => navigate('/app/compose')} />;
+    page = <SetupPage onDone={() => { refreshMe(); navigate('/app/compose'); }} />;
   } else if (authed && knownAppRoute) {
     switch (path) {
       case '/app/queue': page = <QueuePage me={me} navigate={navigate} />; break;

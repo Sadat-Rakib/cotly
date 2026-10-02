@@ -69,16 +69,47 @@ describe('facebook adapter', () => {
     expect(url).toContain('redirect_uri=http%3A%2F%2Flocalhost%3A8787%2Foauth%2Ffacebook%2Fcallback');
   });
 
-  it('exchanges the code and takes the first page', async () => {
+  it('connects the only Page on the account without asking', async () => {
     const calls = stubFetch([
       () => jsonRes(200, { access_token: 'USER_TOKEN_VERY_SECRET_42' }),
       () => jsonRes(200, { data: [{ id: 'page-123', name: 'Test Page', access_token: TOKEN }] }),
     ]);
     const cb = await new FacebookAdapter().handleCallback(env, new URLSearchParams('code=abc&state=st123'));
+    expect(cb.pageChoice).toBeUndefined();
     expect(cb.account).toEqual({ externalId: 'page-123', displayName: 'Test Page', meta: { pageId: 'page-123' } });
-    expect(cb.tokens.accessToken).toBe(TOKEN);
+    expect(cb.tokens?.accessToken).toBe(TOKEN);
     expect(calls[0]?.url).toContain('/oauth/access_token');
     expect(calls[1]?.url).toContain('/me/accounts');
+  });
+
+  it('asks the user to choose when the account manages several Pages', async () => {
+    const calls = stubFetch([
+      () => jsonRes(200, { access_token: 'USER_TOKEN_VERY_SECRET_42' }),
+      () =>
+        jsonRes(200, {
+          data: [
+            { id: 'page-1', name: 'First Page', access_token: 'tok-1' },
+            { id: 'page-2', name: 'Second Page', access_token: 'tok-2' },
+          ],
+        }),
+    ]);
+    const cb = await new FacebookAdapter().handleCallback(env, new URLSearchParams('code=abc&state=st123'));
+    expect(cb.account).toBeUndefined();
+    expect(cb.pageChoice?.pages).toEqual([
+      { id: 'page-1', name: 'First Page' },
+      { id: 'page-2', name: 'Second Page' },
+    ]);
+    expect(calls[1]?.url).toContain('/me/accounts');
+  });
+
+  it('refuses to connect when the account manages no Page', async () => {
+    stubFetch([
+      () => jsonRes(200, { access_token: 'USER_TOKEN_VERY_SECRET_42' }),
+      () => jsonRes(200, { data: [] }),
+    ]);
+    await expect(
+      new FacebookAdapter().handleCallback(env, new URLSearchParams('code=abc&state=st123')),
+    ).rejects.toThrow(/No Facebook Page/i);
   });
 
   it('publishes text-only via /feed and reads the permalink', async () => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { ApiError, api, providerLabel, type Me } from '../api';
 import { useToast } from '../components/Toasts';
 import {
@@ -108,6 +108,78 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
+interface MetaTestRow {
+  provider: string;
+  appId: string;
+  configured: boolean;
+  reachable: boolean;
+  ok: boolean;
+  detail: string;
+}
+
+const META_STEPS: Array<{ title: string; body: ReactNode }> = [
+  {
+    title: 'Create a Meta developer app',
+    body: (
+      <>
+        Open the Meta Developer Dashboard, choose <strong>My Apps → Create App</strong>, and pick the{' '}
+        <strong>Business</strong> app type. Name it <code className="code">Cotly</code>. This is the only
+        step that needs your Meta login.
+      </>
+    ),
+  },
+  {
+    title: 'Add the Facebook and Threads products',
+    body: (
+      <>
+        On the app dashboard click <strong>Add product</strong> and add both <strong>Facebook</strong>{' '}
+        (for Login for Business, so Cotly can post to Pages) and <strong>Threads</strong>. Cotly talks to
+        the official Graph APIs for both — nothing is automated through a browser.
+      </>
+    ),
+  },
+  {
+    title: 'Set the OAuth redirect URIs',
+    body: (
+      <>
+        In each product's settings paste the callback below and Save. Both must match exactly, including
+        the trailing path.
+      </>
+    ),
+  },
+  {
+    title: 'Request the permissions Cotly needs',
+    body: (
+      <>
+        Under <strong>Facebook → Permissions and Features</strong> request{' '}
+        <code className="code">pages_show_list</code>, <code className="code">pages_manage_posts</code> and{' '}
+        <code className="code">pages_read_engagement</code>. Under{' '}
+        <strong>Threads → Permissions</strong> request <code className="code">threads_basic</code> and{' '}
+        <code className="code">threads_content_publish</code>. Add them as products, then request
+        Advanced Access when Meta offers it.
+      </>
+    ),
+  },
+  {
+    title: 'Give Cotly the App ID and App Secret',
+    body: (
+      <>
+        Both live under <strong>Settings → Basic</strong> on the app dashboard. Cotly keeps the secret in
+        Cloudflare, never in the browser. You paste them yourself with{' '}
+        <code className="code">wrangler secret put</code> — Cotly will not read them from the dashboard.
+      </>
+    ),
+  },
+  {
+    title: 'Test the configuration',
+    body: <>Run the test below. It asks Meta who the app is using your App ID + App Secret. It publishes nothing and grants nothing.</>,
+  },
+  {
+    title: 'Connect the accounts',
+    body: <>Connect Facebook Pages and Threads from here or the Accounts page. Cotly only ever targets Facebook Pages, never a personal profile.</>,
+  },
+];
+
 export function SetupCenterPage({ me, navigate }: Props) {
   const toast = useToast();
   const [status, setStatus] = useState<SetupStatus | null>(null);
@@ -116,6 +188,8 @@ export function SetupCenterPage({ me, navigate }: Props) {
   const [bskyPassword, setBskyPassword] = useState('');
   const [mockName, setMockName] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
+  const [metaResults, setMetaResults] = useState<MetaTestRow[] | null>(null);
+  const [metaNote, setMetaNote] = useState('');
 
   const load = useCallback(async () => {
     try {
@@ -180,6 +254,23 @@ export function SetupCenterPage({ me, navigate }: Props) {
   const copy = async (text: string) => {
     const ok = await copyText(text);
     toast(ok ? 'ok' : 'err', ok ? 'Copied to clipboard' : 'Copy failed — select the text manually');
+  };
+
+  // POST /api/setup/test-meta — read-only probe. It asks Meta which app the
+  // App ID + App Secret belong to. Nothing is published and nothing is granted.
+  const testMeta = async () => {
+    setBusy('meta');
+    try {
+      const r = await api<{ results: MetaTestRow[]; note?: string }>('/api/setup/test-meta', { method: 'POST' });
+      setMetaResults(r.results);
+      setMetaNote(r.note ?? '');
+      const allOk = r.results.every((x) => x.ok);
+      toast(allOk ? 'ok' : 'info', allOk ? 'Meta credentials verified.' : 'Some Meta credentials are still missing.');
+    } catch (e) {
+      toast('err', e instanceof ApiError ? e.message : 'Could not test the Meta configuration');
+    } finally {
+      setBusy(null);
+    }
   };
 
   if (err && !status) {
@@ -333,6 +424,163 @@ export function SetupCenterPage({ me, navigate }: Props) {
           </p>
         )}
       </section>
+
+      <section className="card">
+        <h2>Connect Facebook Pages and Threads</h2>
+        <p className="hint">
+          Seven steps, in order. Everything above them is automatic — these are the parts that need your
+          Meta login and your approval.
+        </p>
+
+        <ol className="setup-steps">
+          {META_STEPS.map((step, i) => (
+            <li key={step.title}>
+              <span className="setup-step-title">{step.title}</span>
+              <p className="setup-step-body">{step.body}</p>
+
+              {i === 0 && (
+                <a
+                  className="btn btn-primary btn-sm"
+                  href="https://developers.facebook.com/apps"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open Meta Developer Dashboard
+                </a>
+              )}
+
+              {i === 2 &&
+                (['facebook', 'threads'] as const).map((prov) => {
+                  const url = callbackUrlFor(status.deployment.appUrl, prov);
+                  return (
+                    <div key={prov} className="callback-row">
+                      <span className="callback-label">{providerLabel(prov)}</span>
+                      <code className="code">{url}</code>
+                      <button type="button" className="btn btn-sm" onClick={() => void copy(url)}>Copy</button>
+                    </div>
+                  );
+                })}
+
+              {i === 4 &&
+                (['facebook', 'threads'] as const).map((prov) => {
+                  const m = OAUTH_PROVIDER_META[prov];
+                  if (!m) return null;
+                  const idCmd = `wrangler secret put ${m.idEnv}`;
+                  const secretCmd = `wrangler secret put ${m.secretEnv}`;
+                  return (
+                    <div key={prov} className="callback-row">
+                      <span className="callback-label">{providerLabel(prov)}</span>
+                      <code className="code">{idCmd}</code>
+                      <button type="button" className="btn btn-sm" onClick={() => void copy(idCmd)}>
+                        Copy
+                      </button>
+                      <code className="code">{secretCmd}</code>
+                      <button type="button" className="btn btn-sm" onClick={() => void copy(secretCmd)}>
+                        Copy
+                      </button>
+                    </div>
+                  );
+                })}
+
+              {i === 5 && (
+                <>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    disabled={busy === 'meta'}
+                    onClick={() => void testMeta()}
+                  >
+                    {busy === 'meta' ? 'Testing…' : 'Test Meta configuration'}
+                  </button>
+                  {metaResults && (
+                    <ul className="check-list">
+                      {metaResults.map((m) => (
+                        <li key={m.provider} className="check-row">
+                          <span className={`check-dot ${m.ok ? 'check-ok' : 'check-down'}`} aria-hidden="true" />
+                          <div className="check-main">
+                            <span className="check-label">
+                              {providerLabel(m.provider)}
+                              <span className={`check-state ${m.ok ? 'check-state-ok' : 'check-state-down'}`}>
+                                {m.ok ? 'Verified' : m.configured ? 'Rejected by Meta' : 'Not configured'}
+                              </span>
+                            </span>
+                            <span className="check-detail">{m.detail}</span>
+                            {m.appId && <span className="check-why">App ID {m.appId}</span>}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {metaNote && <p className="hint">{metaNote}</p>}
+                </>
+              )}
+
+              {i === 6 && (
+                <div className="settings-links">
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-primary"
+                    disabled={busy === 'oauth-facebook'}
+                    onClick={() => void connectOAuth('facebook')}
+                  >
+                    Connect Facebook Page
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-primary"
+                    disabled={busy === 'oauth-threads'}
+                    onClick={() => void connectOAuth('threads')}
+                  >
+                    Connect Threads
+                  </button>
+                </div>
+              )}
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      {!status.deployment.r2 && (
+        <section className="card">
+          <h2>Media uploads</h2>
+          <div className="banner banner-warn">
+            <span>Media uploads unavailable until R2 is enabled.</span>
+          </div>
+          <p className="hint">
+            Cotly keeps uploads in Cloudflare R2, which is not enabled on this account yet. Everything
+            else — scheduling, text posts, Facebook, Threads — works without it. To turn uploads on:
+          </p>
+          <ol className="setup-steps">
+            <li>
+              Open{' '}
+              <a href="https://dash.cloudflare.com" target="_blank" rel="noreferrer">dash.cloudflare.com</a>{' '}
+              and choose <strong>R2 Object Storage</strong> in the sidebar.
+            </li>
+            <li>
+              Click <strong>Enable R2</strong> and accept the terms. R2 has a free tier; Cotly does not
+              add any other paid storage provider.
+            </li>
+            <li>
+              Under <strong>Buckets</strong>, create a bucket called <code className="code">cotly-media</code>.
+            </li>
+            <li>
+              Under <strong>R2 → API Tokens → Create Account API token</strong>, give it{' '}
+              <strong>Object Read &amp; Write</strong> permission scoped to that bucket, and copy the
+              Access Key ID, Secret Access Key and the Account ID it shows.
+            </li>
+            <li>
+              Set them as Worker secrets, then redeploy:
+              <span className="callback-row"><code className="code">wrangler secret put R2_ACCOUNT_ID</code></span>
+              <span className="callback-row"><code className="code">wrangler secret put R2_ACCESS_KEY_ID</code></span>
+              <span className="callback-row"><code className="code">wrangler secret put R2_SECRET_ACCESS_KEY</code></span>
+            </li>
+            <li>
+              Restart this page — <strong>Object storage (R2)</strong> above turns green — then compose a
+              post with an image and a video to confirm both upload.
+            </li>
+          </ol>
+        </section>
+      )}
 
       <section className="card">
         <h2>Launch checklist</h2>

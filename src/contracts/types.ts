@@ -91,17 +91,35 @@ export type PublishOutcome =
   | { kind: 'needs_reconnect'; reason: string }
   | { kind: 'failed'; retryable: boolean; errorCode: string; errorMessage: string; raw?: string };
 
+export interface AdapterAccount {
+  externalId: string;
+  displayName: string;
+  avatarUrl?: string;
+  meta?: Record<string, unknown>;
+}
+
+// A provider whose OAuth returns several possible destinations (Facebook Pages)
+// reports them here instead of silently binding to the first one. The API layer
+// parks the user token in an encrypted short-lived cookie and asks the user.
+export interface AdapterPageChoice {
+  userToken: string;
+  pages: Array<{ id: string; name: string }>;
+}
+
+export type AdapterCallbackResult =
+  | { account: AdapterAccount; tokens: AccountTokens; scopes: string; pageChoice?: undefined }
+  | { account?: undefined; tokens?: undefined; scopes?: undefined; pageChoice: AdapterPageChoice };
+
 export interface PlatformAdapter {
   readonly provider: Provider;
   readonly capabilities: PlatformCapabilities;
   buildAuthUrl?(env: Env, redirectUri: string, state: string): Promise<{ url: string; verifier?: string }>;
-  handleCallback?(
-    env: Env,
-    params: URLSearchParams,
-    verifier?: string,
-  ): Promise<{ account: { externalId: string; displayName: string; avatarUrl?: string; meta?: Record<string, unknown> }; tokens: AccountTokens; scopes: string }>;
+  handleCallback?(env: Env, params: URLSearchParams, verifier?: string): Promise<AdapterCallbackResult>;
+  // Read-only listing + exchange used by the Facebook Page picker.
+  listPages?(env: Env, userToken: string): Promise<Array<{ id: string; name: string }>>;
+  pickPage?(env: Env, userToken: string, pageId: string): Promise<{ account: AdapterAccount; tokens: AccountTokens; scopes: string }>;
   connectDirect?(env: Env, input: Record<string, string>): Promise<{
-    account: { externalId: string; displayName: string; avatarUrl?: string; meta?: Record<string, unknown> };
+    account: AdapterAccount;
     tokens: AccountTokens;
     scopes: string;
   }>;

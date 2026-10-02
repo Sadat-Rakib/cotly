@@ -146,3 +146,98 @@ async function launchChecklist(
     { key: 'evidence_stored', label: 'Provider evidence stored for a real publish', done: evidenceStored },
   ];
 }
+
+// ---- Meta configuration test (read-only) ----
+// Proves Cotly holds a valid App ID + App Secret pair by asking Meta who that
+// app is, using an app access token. It publishes nothing, grants nothing, and
+// never returns a secret or a token to the browser.
+export interface MetaTestResult {
+  provider: 'facebook' | 'threads';
+  appId: string | null;
+  configured: boolean;
+  reachable: boolean;
+  ok: boolean;
+  detail: string;
+}
+
+const META_GRAPH = 'https://graph.facebook.com/v21.0';
+const THREADS_GRAPH = 'https://graph.threads.net/v1.0';
+
+// Graph error bodies never need the token back; strip defensively anyway.
+function scrub(text: string, secret: string): string {
+  const out = text.split(secret).join('***').split(encodeURIComponent(secret)).join('***');
+  return out.length > 240 ? `${out.slice(0, 240)}…` : out;
+}
+
+async function probeMetaApp(
+  provider: 'facebook' | 'threads',
+  base: string,
+  appId: string | undefined,
+  appSecret: string | undefined,
+): Promise<MetaTestResult> {
+  if (!appId || !appSecret) {
+    return {
+      provider,
+      appId: appId ?? null,
+      configured: false,
+      reachable: false,
+      ok: false,
+      detail: appId
+        ? 'App Secret is not set on the Cotly deployment.'
+        : 'App ID is not set on the Cotly deployment.',
+    };
+  }
+  const token = `${appId}|${appSecret}`;
+  const u = new URL(`${base}/${appId}`);
+  u.searchParams.set('fields', provider === 'threads' ? 'id' : 'id,name');
+  u.searchParams.set('access_token', token);
+  try {
+    const res = await fetch(u.toString(), { headers: { accept: 'application/json' } });
+    const body = (await res.json().catch(() => null)) as
+      | { name?: string; error?: { message?: string } }
+      | null;
+    if (!res.ok || body?.error) {
+      return {
+        provider,
+        appId,
+        configured: true,
+        reachable: true,
+        ok: false,
+        detail: scrub(body?.error?.message ?? `Meta returned HTTP ${res.status}.`, token),
+      };
+    }
+    return {
+      provider,
+      appId,
+      configured: true,
+      reachable: true,
+      ok: true,
+      detail: provider === 'threads'
+        ? `Threads app ${appId} accepted the credentials.`
+        : `App ${appId}${body?.name ? ` (${body.name})` : ''} accepted the credentials.`,
+    };
+  } catch {
+    return {
+      provider,
+      appId,
+      configured: true,
+      reachable: false,
+      ok: false,
+      detail: 'Cotly could not reach the Meta Graph API. Check that the deployment allows outbound HTTPS requests.',
+    };
+  }
+}
+
+export async function testMeta(env: Env): Promise<Response> {
+  const [facebook, threads] = await Promise.all([
+    probeMetaApp('facebook', META_GRAPH, env.META_CLIENT_ID, env.META_CLIENT_SECRET),
+    probeMetaApp('threads', THREADS_GRAPH, env.THREADS_CLIENT_ID, env.THREADS_CLIENT_SECRET),
+  ]);
+  const sameApp = Boolean(env.META_CLIENT_ID) && env.META_CLIENT_ID === env.THREADS_CLIENT_ID;
+  return json({
+    results: [facebook, threads],
+    note: sameApp
+      ? 'Facebook and Threads share one Meta app, which is the recommended setup.'
+      : 'Facebook and Threads are configured as two separate Meta apps.',
+  });
+}

@@ -1,13 +1,31 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Cotly</title>
+    <title>Cotly — Post once. Get on with your day.</title>
+    <meta
+      name="description"
+      content="Cotly is a personal multi-platform scheduler. Upload once, connect your accounts, choose when it goes live, and let the cloud handle the rest."
+    />
+    <meta name="theme-color" content="#e9ede3" />
+    <meta property="og:title" content="Cotly" />
+    <meta property="og:description" content="Post once. Get on with your day." />
+    <meta property="og:type" content="website" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23e9ede3'/%3E%3Cpath d='M9 21c3-9 11-9 14 0' stroke='%232c5540' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='11' r='2.4' fill='%232c5540'/%3E%3C/svg%3E"
+    />
     <script>
       // Apply saved theme before first paint.
       try {
-        if (localStorage.getItem('cotly_theme') === 'light') document.documentElement.dataset.theme = 'light';
+        if (localStorage.getItem('cotly_theme') === 'dark') document.documentElement.dataset.theme = 'dark';
       } catch {}
     </script>
   </head>
