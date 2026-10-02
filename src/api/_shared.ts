@@ -29,8 +29,8 @@ export async function deploymentStatus(env: Env): Promise<DeploymentStatus> {
   }
   let r2 = false;
   try {
-    await env.MEDIA.head('cotly-r2-probe');
-    r2 = true;
+    await env.MEDIA?.head('cotly-r2-probe');
+    r2 = Boolean(env.MEDIA);
   } catch {
     r2 = false;
   }

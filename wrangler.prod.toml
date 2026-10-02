@@ -1,6 +1,11 @@
+# Production deploy config. Identical to wrangler.toml but WITHOUT the R2 binding:
+# R2 is not yet enabled on this account (code is null-safe; enable R2, then create
+# the bucket and copy the [[r2_buckets]] block back here to unlock media uploads).
+# Tests and local dev use wrangler.toml, which keeps the binding for miniflare.
 name = "cotly"
 main = "src/index.ts"
 compatibility_date = "2025-04-01"
+workers_dev = true
 
 [assets]
 directory = "./dist/client"
@@ -14,15 +19,11 @@ database_name = "cotly-db"
 database_id = "e68507d1-845a-4ce1-bf18-2c991b12ad0a"
 migrations_dir = "migrations"
 
-[[r2_buckets]]
-binding = "MEDIA"
-bucket_name = "cotly-media"
-
 [triggers]
 crons = ["* * * * *"]
 
 [vars]
-APP_URL = "http://localhost:8787"
+APP_URL = "https://cotly.cotly-app.workers.dev"
 ALLOW_REGISTRATION = "false"
 MOCK_SOCIAL_ENABLED = "true"
 MEDIA_RETENTION_HOURS = "48"

@@ -34,6 +34,7 @@ export async function confirm(req: Request, env: Env): Promise<Response> {
   const body = await readJson(req);
   const r2Key = String(body.r2Key ?? '');
   if (!r2Key.startsWith('media/') || r2Key.includes('..')) throw new HttpError(400, 'That upload reference is invalid.');
+  if (!env.MEDIA) throw new HttpError(503, 'Media storage is not enabled on this deployment yet. Text-only posts still work.');
   const obj = await env.MEDIA.head(r2Key);
   if (!obj) throw new HttpError(400, 'That upload did not complete. Upload the file again and retry.');
   const id = typeof body.mediaId === 'string' && body.mediaId ? body.mediaId : `med_${randomId(8)}`;

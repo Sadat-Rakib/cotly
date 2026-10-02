@@ -10,6 +10,13 @@ Last updated: 2026-10-02 (v0.2). Resume from here — do not restart from scratc
 - npm scripts now always pass `--config ./wrangler.toml` (dev, deploy) — parent-tanstack config hijack can't recur.
 - 92/92 tests green, tsc clean, vite build clean.
 
+## LIVE VERIFIED (2026-10-02) — Bluesky, production Cloudflare
+- Deployment: https://cotly.cotly-app.workers.dev (worker `cotly`, D1 e68507d1, cron 1 min, secrets set; R2 NOT yet enabled account-wide -> wrangler.prod.toml deploys without the R2 binding; code is null-safe. To unlock media: enable R2, `wrangler r2 bucket create cotly-media`, copy the [[r2_buckets]] block into wrangler.prod.toml, redeploy.)
+- Test 1 (Publish Now, approved): post_QlyctCdAhIo / tgt_3FO1oKV8Hf8 -> PUBLISHED, delta 60s, 1 attempt, confirmed. at://did:plc:oyl54talfmhejs3qge374q5j/app.bsky.feed.post/3mwvu3ohsu422
+- Test 2 (Scheduled cloud-only, approved): post_bV6TpvhL6wE / tgt_bIRFkwl_spU -> PUBLISHED, scheduled_at 1790960987, published_at 1790961035 (delta 48s), 1 attempt, confirmed. at://.../3mwvui6rnx22n
+- Both externally verified via public.api.bsky.app getRecord (cid + exact text). No duplicate publications.
+- Owner: mir@cotly.local (password in .owner-credentials.txt, gitignored — change later; no change-password endpoint yet).
+
 ## Deployment status
 - `npx wrangler whoami` → NOT authenticated. Human step required: `npx wrangler login` in Cotly dir (or CLOUDFLARE_API_TOKEN env). Then: d1 create → paste id in wrangler.toml → r2 bucket create → db:remote → build+deploy → secrets (ENCRYPTION_SECRET, SESSION_SECRET; R2 S3 creds optional for media) → /setup on the worker URL.
 

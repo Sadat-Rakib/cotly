@@ -209,6 +209,9 @@ export async function graphTestConnection(opts: {
 }
 
 export async function mediaBytes(env: Env, media: MediaRecord): Promise<Uint8Array<ArrayBuffer>> {
+  if (!env.MEDIA) {
+    throw fail([], 'MEDIA_MISSING', 'Media storage is not enabled on this deployment yet.');
+  }
   const obj = await env.MEDIA.get(media.r2Key);
   if (!obj) {
     throw fail([], 'MEDIA_MISSING', 'The attached media file could not be found in storage. Re-upload it and try again.');

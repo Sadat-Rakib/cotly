@@ -4,3 +4,6 @@ dist/
 .dev.vars
 .v2c/
 *.log
+.owner-credentials.txt
+.wrangler-dev.log
+.tail.log

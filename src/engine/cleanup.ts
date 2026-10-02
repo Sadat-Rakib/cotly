@@ -61,7 +61,7 @@ export async function cleanupExpiredMedia(env: Env, now: number): Promise<number
     ).results ?? [];
 
   let deleted = 0;
-  for (const m of rows) {
+  for (const m of env.MEDIA ? rows : []) {
     try {
       await env.MEDIA.delete(m.r2_key);
     } catch {

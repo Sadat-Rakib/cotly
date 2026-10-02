@@ -98,8 +98,8 @@ export async function getDiagnostics(env: Env): Promise<Response> {
   }
   let r2Ok = false;
   try {
-    await env.MEDIA.head('cotly-r2-probe');
-    r2Ok = true;
+    await env.MEDIA?.head('cotly-r2-probe');
+    r2Ok = Boolean(env.MEDIA);
   } catch {
     r2Ok = false;
   }
