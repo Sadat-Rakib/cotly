@@ -128,8 +128,8 @@ export default function App() {
 
   return (
     <div className="app">
-      {authed && <Nav path={path} email={me.email} onNavigate={navigate} onLogout={logout} />}
-      <main className={authed ? 'main' : 'main main-bare'}>{page}</main>
+      {authed && path !== '/' && <Nav path={path} email={me.email} onNavigate={navigate} onLogout={logout} />}
+      <main className={path === '/' ? 'main main-landing' : authed ? 'main' : 'main main-bare'}>{page}</main>
     </div>
   );
 }

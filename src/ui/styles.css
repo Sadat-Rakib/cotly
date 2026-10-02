@@ -49,6 +49,7 @@ html, body {
   color: var(--text);
   font: 15px/1.55 var(--font-body);
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
 }
 
 h1, h2, h3 { font-family: var(--font-display); font-weight: 500; letter-spacing: -0.01em; }
@@ -155,6 +156,12 @@ a { color: var(--accent); }
 }
 
 .main-bare { padding-bottom: 48px; }
+
+/* The public landing is a full-bleed dark page — it escapes the app column.
+   It is styled in Tailwind rem sizes, so give it the browser-standard 16px
+   root (the app uses 15px); :has() keeps this scoped to the landing only. */
+.main-landing { max-width: none; margin: 0; padding: 0; }
+html:has(.main-landing) { font-size: 16px; }
 
 /* ---------- Cards, banners, empty states ---------- */
 

@@ -1,189 +1,196 @@
+import { useEffect, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react';
+import { Flower2 } from 'lucide-react';
+
 interface Props {
   navigate: (p: string) => void;
 }
 
-// HONEST status only. Bluesky is the one platform that has been connected and
-// published end-to-end; Facebook/Threads ship adapters and await the user's Meta
-// app credentials; the rest are not built yet.
-const PLATFORMS: Array<{ name: string; note: string; state: 'live' | 'ready' | 'adapter' | 'next' }> = [
-  { name: 'Bluesky', note: 'Live verified', state: 'live' },
-  { name: 'Facebook Pages', note: 'Ready to connect', state: 'ready' },
-  { name: 'Threads', note: 'Ready to connect', state: 'ready' },
-  { name: 'LinkedIn', note: 'Adapter ready', state: 'adapter' },
-  { name: 'Instagram', note: 'Coming next', state: 'next' },
-  { name: 'X', note: 'Coming next', state: 'next' },
-  { name: 'Reddit', note: 'Coming next', state: 'next' },
-  { name: 'TikTok', note: 'Coming next', state: 'next' },
+// Easings reused by every animation on the page.
+const EASE_ENTRANCE = 'cubic-bezier(0.16, 1, 0.3, 1)';
+const EASE_OVERLAY = 'cubic-bezier(0.76, 0, 0.24, 1)';
+
+const VIDEO_URL =
+  'https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260819_212700_3bb9329b-5c50-4257-a09b-ca85cf3654a3.mp4';
+
+const MENU_LINKS = [
+  { label: 'Home', href: '/' },
+  { label: 'Open Cotly', href: '/app' },
+  { label: 'Connect accounts', href: '/app/accounts' },
+  { label: 'Sign in', href: '/login' },
 ];
 
-const STATE_TEXT: Record<string, string> = {
-  live: 'Connected and published end-to-end.',
-  ready: 'Publisher built. Add your Meta app credentials in Cotly, then connect.',
-  adapter: 'Publisher built. Waiting on your LinkedIn app credentials.',
-  next: 'Not built yet.',
-};
-
-const STEPS = [
-  {
-    num: '01',
-    title: 'Add your content',
-    body: 'Upload image/video and paste your caption.',
-  },
-  {
-    num: '02',
-    title: 'Choose your accounts',
-    body: 'Pick the platforms where it should go.',
-  },
-  {
-    num: '03',
-    title: 'Schedule and leave',
-    body: 'Cotly handles the timing in the cloud.',
-  },
-];
-
-/** Engraved-feel ornament: stroke-only sprig with hatching. Decorative only. */
-function Sprig() {
-  return (
-    <svg className="sprig" viewBox="0 0 120 48" fill="none" aria-hidden="true" focusable="false">
-      <path d="M2 40 C 26 40, 40 22, 62 22 C 82 22, 96 34, 118 34" stroke="currentColor" strokeWidth="1" />
-      <path d="M62 22 C 62 14, 58 10, 52 6" stroke="currentColor" strokeWidth="1" />
-      <path d="M62 22 C 66 13, 72 8, 80 4" stroke="currentColor" strokeWidth="1" />
-      <path d="M30 33 C 34 26, 40 22, 48 20" stroke="currentColor" strokeWidth="0.75" />
-      <path d="M34 37 C 38 31, 42 28, 48 27" stroke="currentColor" strokeWidth="0.5" />
-      <path d="M84 30 C 88 25, 94 22, 100 21" stroke="currentColor" strokeWidth="0.75" />
-      <path d="M88 34 C 92 30, 96 28, 101 27" stroke="currentColor" strokeWidth="0.5" />
-      <circle cx="2" cy="40" r="1.5" fill="currentColor" />
-      <circle cx="118" cy="34" r="1.5" fill="currentColor" />
-    </svg>
-  );
-}
-
-/** Thin rule with a centred mark, used to separate editorial blocks. */
-function Rule() {
-  return (
-    <svg className="rule" viewBox="0 0 400 12" preserveAspectRatio="none" aria-hidden="true" focusable="false">
-      <path d="M0 6 H190 M210 6 H400" stroke="currentColor" strokeWidth="1" />
-      <path d="M198 6 L200 2 L202 6 L200 10 Z" fill="currentColor" />
-    </svg>
-  );
-}
+// Entrance animation helper: the delay only applies once the element is shown,
+// so the initial paint is never pre-delayed.
+const enter = (shown: boolean, delayMs: number, durationMs: number): CSSProperties => ({
+  transitionDelay: shown ? `${delayMs}ms` : '0ms',
+  transitionDuration: `${durationMs}ms`,
+  transitionTimingFunction: EASE_ENTRANCE,
+});
 
 export function Landing({ navigate }: Props) {
+  const [navIn, setNavIn] = useState(false);
+  const [heroIn, setHeroIn] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    const t1 = setTimeout(() => setNavIn(true), 100);
+    const t2 = setTimeout(() => setHeroIn(true), 300);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, []);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 40);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  // Lock the page behind the full-screen menu; restore on close and on unmount
+  // (a link click navigates away with the menu still "open").
+  useEffect(() => {
+    document.body.style.overflow = menuOpen ? 'hidden' : '';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [menuOpen]);
+
+  const go = (href: string) => (e: ReactMouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault();
+    setMenuOpen(false);
+    if (href !== window.location.pathname) navigate(href);
+  };
+
+  // Navbar pieces rise in on load: logo 0ms, Navigate/hamburger 200ms, flower 400ms.
+  const navItem = (shown: boolean, delayMs: number, extra = '') => ({
+    className: `${extra} transform transition-all duration-700 ${
+      shown ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'
+    }`.trim(),
+    style: enter(shown, delayMs, 700),
+  });
+
   return (
-    <div className="landing">
-      <div className="landing-inner">
-        <header className="landing-header">
-          <span className="landing-brand">cotly</span>
-          <nav className="landing-nav" aria-label="Landing">
-            <a className="landing-navlink" href="#how-it-works">How it works</a>
-            <a className="landing-navlink" href="#platforms">Platforms</a>
-            <button type="button" className="landing-navlink landing-signin" onClick={() => navigate('/login')}>Sign in</button>
-          </nav>
-          <button type="button" className="btn btn-primary" onClick={() => navigate('/app')}>Open Cotly</button>
-        </header>
+    <div className="bg-black">
+      {/* ---------- Navbar ---------- */}
+      <header
+        className={`fixed top-0 left-0 w-full z-50 transition-all duration-500 ${
+          scrolled ? 'bg-black/80 backdrop-blur-md' : 'bg-transparent'
+        }`}
+      >
+        <div className="max-w-[1440px] mx-auto px-6 md:px-10 flex items-center justify-between h-16 md:h-20">
+          <a href="/" onClick={go('/')} {...navItem(navIn, 0, 'z-50 no-underline text-white text-xl md:text-2xl font-semibold tracking-tight')}>
+            cotly
+          </a>
 
-        <section className="landing-hero">
-          <span className="landing-eyebrow">Social scheduling, minus the babysitting</span>
-          <h1 className="landing-title">Post once.<br />Get on with your day.</h1>
-          <p className="landing-sub">
-            Upload your content, connect your accounts, choose when it should go live, and Cotly
-            handles the schedule.
-          </p>
-          <div className="landing-cta-row">
-            <button type="button" className="btn btn-primary btn-lg" onClick={() => navigate('/app')}>Open Cotly</button>
-            <button type="button" className="btn btn-lg" onClick={() => navigate('/app/accounts')}>Connect accounts</button>
+          <button
+            type="button"
+            onClick={() => setMenuOpen((v) => !v)}
+            {...navItem(navIn, 200, 'hidden md:flex items-center gap-2 px-5 py-2 rounded-full border border-white/20 text-white/90 text-sm hover:bg-white/10')}
+          >
+            {menuOpen ? 'Close' : 'Navigate'}
+          </button>
+
+          <div {...navItem(navIn, 400, 'hidden md:block')}>
+            <Flower2 className="w-7 h-7 text-white/90" />
           </div>
 
-          {/* Tasteful preview of the real product — static, honest, no fake analytics. */}
-          <div className="landing-mock" aria-hidden="true">
-            <div className="landing-mock-frame">
-              <div className="landing-mock-bar">
-                <span className="landing-mock-dot" />
-                <span className="landing-mock-dot" />
-                <span className="landing-mock-dot" />
-                <span className="landing-mock-title">Compose</span>
-              </div>
-              <div className="landing-mock-body">
-                <div className="card landing-mock-card">
-                  <span className="mock-kicker">Your post</span>
-                  <div className="mock-media-row">
-                    <div className="thumb"><span className="thumb-file">img</span></div>
-                    <div className="thumb"><span className="thumb-file">img</span></div>
-                    <div className="thumb"><span className="thumb-file">video</span></div>
-                  </div>
-                  <p className="mock-caption">&ldquo;Autumn collection drops Friday — behind the scenes thread below.&rdquo;</p>
-                  <div className="chips">
-                    <span className="chip chip-neutral">Bluesky · 92/300</span>
-                    <span className="chip chip-neutral">Threads · 92/500</span>
-                  </div>
-                </div>
-                <div className="card landing-mock-card">
-                  <div className="qitem-top">
-                    <span className="qtime">Tomorrow, 9:00 AM</span>
-                    <span className="badge badge-scheduled">scheduled</span>
-                  </div>
-                  <p className="qcaption">Autumn collection drops Friday…</p>
-                  <div className="chips">
-                    <span className="chip chip-scheduled">Bluesky · scheduled</span>
-                    <span className="chip chip-scheduled">Threads · scheduled</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
+          <button
+            type="button"
+            aria-label="Toggle menu"
+            onClick={() => setMenuOpen((v) => !v)}
+            {...navItem(navIn, 200, 'md:hidden w-8 h-8 flex flex-col items-center justify-center gap-1.5')}
+          >
+            <span
+              className="w-6 h-[2px] bg-white transition-all duration-500"
+              style={{
+                transitionTimingFunction: EASE_OVERLAY,
+                transform: menuOpen ? 'translateY(4px) rotate(45deg)' : 'none',
+              }}
+            />
+            <span
+              className="w-6 h-[2px] bg-white transition-all duration-500"
+              style={{
+                transitionTimingFunction: EASE_OVERLAY,
+                transform: menuOpen ? 'translateY(-4px) rotate(-45deg)' : 'none',
+              }}
+            />
+          </button>
+        </div>
+      </header>
 
-        <section className="landing-section" id="how-it-works">
-          <Rule />
-          <h2 className="landing-h2">How it works</h2>
-          <div className="landing-steps">
-            {STEPS.map((s) => (
-              <div key={s.num} className="landing-step">
-                <span className="landing-step-num">{s.num}</span>
-                <h3>{s.title}</h3>
-                <p>{s.body}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="landing-section" id="platforms">
-          <Rule />
-          <h2 className="landing-h2">Platforms</h2>
-          <p className="landing-section-sub">
-            Where each one actually stands, stated plainly.
-          </p>
-          <ul className="platform-table">
-            {PLATFORMS.map((p) => (
-              <li key={p.name} className={`platform-row platform-${p.state}`}>
-                <span className="platform-name">{p.name}</span>
-                <span className={`plat-badge plat-${p.state}`}>{p.note}</span>
-                <span className="platform-blurb">{STATE_TEXT[p.state]}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        <section className="landing-final">
-          <Sprig />
-          <h2 className="landing-title-sm">Your content. Your schedule. No babysitting posts.</h2>
-          <button type="button" className="btn btn-primary btn-lg" onClick={() => navigate('/app')}>Open Cotly</button>
-        </section>
-
-        <footer className="landing-footer">
-          <div className="landing-footer-brand">
-            <span className="landing-brand">cotly</span>
-            <span className="landing-footer-tag">Post once. Get on with your day.</span>
-          </div>
-          <nav className="landing-footer-links" aria-label="Footer">
-            <a href="#how-it-works">How it works</a>
-            <a href="#platforms">Platforms</a>
-            <a href="/login">Sign in</a>
-            <a href="/setup">First-time setup</a>
-          </nav>
-          <span className="landing-footer-note">Cotly is an independent scheduler. Not affiliated with any platform listed above.</span>
-        </footer>
+      {/* ---------- Full-screen overlay menu ---------- */}
+      <div
+        className={`fixed inset-0 z-40 bg-black flex flex-col items-center justify-center transition-all duration-[700ms] ${
+          menuOpen ? 'opacity-100 visible' : 'opacity-0 invisible'
+        }`}
+        style={{ transitionTimingFunction: EASE_OVERLAY }}
+      >
+        <nav className="flex flex-col items-center gap-8">
+          {MENU_LINKS.map((link, i) => (
+            <a
+              key={link.label}
+              href={link.href}
+              onClick={go(link.href)}
+              className={`font-instrument no-underline text-white text-4xl md:text-6xl hover:opacity-60 transform transition-all duration-[600ms] ${
+                menuOpen ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'
+              }`}
+              style={{
+                transitionDelay: menuOpen ? `${150 + i * 80}ms` : '0ms',
+                transitionTimingFunction: EASE_OVERLAY,
+              }}
+            >
+              {link.label}
+            </a>
+          ))}
+        </nav>
       </div>
+
+      {/* ---------- Hero ---------- */}
+      <section className="relative w-full h-screen overflow-hidden flex items-end justify-center">
+        <div
+          className={`absolute inset-0 transform transition-all duration-[1400ms] ${
+            heroIn ? 'scale-100 opacity-100' : 'scale-105 opacity-0'
+          }`}
+          style={enter(heroIn, 0, 1400)}
+        >
+          <video src={VIDEO_URL} autoPlay muted loop playsInline className="w-full h-full object-cover" />
+        </div>
+
+        <div className="relative z-10 text-center px-6 pb-16 md:pb-24 max-w-4xl mx-auto">
+          <h1
+            className={`font-instrument text-white text-[2.5rem] leading-[0.95] sm:text-5xl md:text-6xl lg:text-7xl mb-5 md:mb-6 transform transition-all duration-[900ms] ${
+              heroIn ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
+            }`}
+            style={enter(heroIn, 400, 900)}
+          >
+            Post once.
+            <br className="hidden sm:block" /> Get on with your day.
+          </h1>
+
+          <p
+            className={`text-white/70 text-base md:text-lg mb-8 md:mb-10 max-w-md mx-auto transform transition-all duration-[900ms] ${
+              heroIn ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
+            }`}
+            style={enter(heroIn, 600, 900)}
+          >
+            Upload your content, connect your accounts, choose when it should go live, and Cotly handles the schedule.
+          </p>
+
+          <a
+            href="/app"
+            onClick={go('/app')}
+            className={`no-underline inline-block px-8 py-3.5 bg-white text-black text-sm md:text-base font-medium rounded-full hover:bg-white/90 transform transition-all duration-[900ms] ${
+              heroIn ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
+            }`}
+            style={enter(heroIn, 800, 900)}
+          >
+            Open Cotly
+          </a>
+        </div>
+      </section>
     </div>
   );
 }
