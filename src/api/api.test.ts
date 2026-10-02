@@ -52,7 +52,7 @@ async function api(path: string, method: string, body?: unknown, opts: { auth?: 
 beforeAll(async () => {
   const v = env as unknown as Record<string, string | undefined>;
   v.SESSION_SECRET ||= SECRET;
-  v.ENCRYPTION_SECRET ||= SECRET;
+  v.ENCRYPTION_SECRET = SECRET;
   v.MOCK_SOCIAL_ENABLED ||= 'true';
   // D1 rejects a leading comment-only line in exec(), so strip comments first.
   const statements = schema

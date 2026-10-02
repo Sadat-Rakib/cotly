@@ -12,7 +12,7 @@ const nowS = (): number => Math.floor(Date.now() / 1000);
 
 beforeAll(async () => {
   // Secrets are not part of wrangler.toml vars; provide one if the pool did not load .dev.vars.
-  (env as unknown as { ENCRYPTION_SECRET?: string }).ENCRYPTION_SECRET ||= SECRET;
+  (env as unknown as { ENCRYPTION_SECRET?: string }).ENCRYPTION_SECRET = SECRET;
   // D1 exec() treats a leading comment-only line as an empty statement, so strip
   // comments and run each statement separately.
   const statements = schema
