@@ -119,7 +119,7 @@ export function SettingsPage({ me, navigate, onLogout }: Props) {
       <section className="card">
         <h2>More</h2>
         <div className="settings-links">
-          <button type="button" className="btn" onClick={() => navigate('/diagnostics')}>Open diagnostics</button>
+          <button type="button" className="btn" onClick={() => navigate('/app/diagnostics')}>Open diagnostics</button>
           <button type="button" className="btn" onClick={toggleTheme}>Toggle light / dark theme</button>
           <button type="button" className="btn btn-ghost" onClick={onLogout}>Log out ({me.email})</button>
         </div>

@@ -5,12 +5,29 @@ import { AccountsPage } from './pages/Accounts';
 import { CalendarPage } from './pages/Calendar';
 import { ComposePage } from './pages/Compose';
 import { DiagnosticsPage } from './pages/Diagnostics';
+import { Landing } from './pages/Landing';
 import { LoginPage } from './pages/Login';
 import { QueuePage } from './pages/Queue';
 import { SettingsPage } from './pages/Settings';
+import { SetupCenterPage } from './pages/SetupCenter';
 import { SetupPage } from './pages/Setup';
 
-const PROTECTED = new Set(['/compose', '/queue', '/calendar', '/accounts', '/settings', '/diagnostics']);
+const APP_ROUTES = new Set([
+  '/app/compose', '/app/queue', '/app/calendar', '/app/accounts', '/app/settings', '/app/diagnostics', '/app/setup',
+]);
+
+// Pre-v0.2 links (e.g. OAuth callbacks redirecting to /accounts?connected=1)
+// land on their /app equivalents, query string preserved.
+const LEGACY_ALIASES: Record<string, string> = {
+  '/compose': '/app/compose',
+  '/queue': '/app/queue',
+  '/calendar': '/app/calendar',
+  '/accounts': '/app/accounts',
+  '/settings': '/app/settings',
+  '/diagnostics': '/app/diagnostics',
+};
+
+const LOADING = <div className="center-screen"><div className="spinner" aria-label="Loading" /></div>;
 
 export default function App() {
   const [path, setPath] = useState(() => window.location.pathname);
@@ -23,8 +40,12 @@ export default function App() {
   }, []);
 
   const navigate = useCallback((p: string) => {
-    if (p !== window.location.pathname) window.history.pushState({}, '', p);
-    setPath(p);
+    const [pathname, search] = p.split('?');
+    const next = pathname ?? p;
+    if (next !== window.location.pathname || (search ?? '') !== window.location.search.replace(/^\?/, '')) {
+      window.history.pushState({}, '', p);
+    }
+    setPath(next);
     window.scrollTo(0, 0);
   }, []);
 
@@ -32,23 +53,25 @@ export default function App() {
     let alive = true;
     api<Me>('/api/me')
       .then((m) => { if (alive) setMe(m); })
-      .catch(() => { if (alive) setMe(null); }); // network / 401 -> login
+      .catch(() => { if (alive) setMe(null); }); // network / 401 -> logged out
     return () => { alive = false; };
   }, []);
 
-  // Route guards.
+  // Route guards. '/' is the public landing page and is never redirected.
   useEffect(() => {
     if (me === undefined) return;
     if (me === null) {
-      if (path !== '/login' && path !== '/setup') navigate('/login');
+      if (path !== '/' && path !== '/login' && path !== '/setup') navigate('/login');
       return;
     }
     if (!me.isSetup) {
       if (path !== '/setup') navigate('/setup');
       return;
     }
-    if (path !== '/' && !PROTECTED.has(path)) navigate('/compose');
-    else if (path === '/') navigate('/compose');
+    const query = window.location.search;
+    if (path === '/login' || path === '/setup' || path === '/app') navigate('/app/compose');
+    else if (LEGACY_ALIASES[path]) navigate(`${LEGACY_ALIASES[path]}${query}`);
+    else if (path !== '/' && !APP_ROUTES.has(path)) navigate('/');
   }, [me, path, navigate]);
 
   const logout = useCallback(async () => {
@@ -57,34 +80,42 @@ export default function App() {
     navigate('/login');
   }, [navigate]);
 
-  if (me === undefined) {
-    return <div className="center-screen"><div className="spinner" aria-label="Loading" /></div>;
-  }
+  if (me === undefined) return LOADING;
 
   const authed = me !== null && me.isSetup;
+  const knownAppRoute = APP_ROUTES.has(path);
+
+  // States the guard is about to redirect away from render as loading, never
+  // as their (unauthorized) page.
+  const waiting = me === null
+    ? path !== '/' && path !== '/login' && path !== '/setup'
+    : !me.isSetup
+      ? path !== '/setup'
+      : path === '/login' || path === '/setup' || path === '/app'
+        || (!knownAppRoute && path !== '/' && !LEGACY_ALIASES[path]);
+
+  if (waiting) return LOADING;
 
   let page: ReactElement;
-  if (path === '/setup' && (!authed || !me.isSetup)) {
-    page = <SetupPage onDone={() => navigate('/compose')} />;
-  } else if (path === '/login' && !authed) {
-    page = <LoginPage onDone={() => navigate('/compose')} />;
-  } else if (authed) {
+  if (path === '/') {
+    page = <Landing navigate={navigate} />;
+  } else if (path === '/login') {
+    page = <LoginPage onDone={() => navigate('/app/compose')} />;
+  } else if (path === '/setup' && (!authed || !me.isSetup)) {
+    page = <SetupPage onDone={() => navigate('/app/compose')} />;
+  } else if (authed && knownAppRoute) {
     switch (path) {
-      case '/queue': page = <QueuePage me={me} navigate={navigate} />; break;
-      case '/calendar': page = <CalendarPage me={me} />; break;
-      case '/accounts': page = <AccountsPage />; break;
-      case '/settings': page = <SettingsPage me={me} navigate={navigate} onLogout={logout} />; break;
-      case '/diagnostics': page = <DiagnosticsPage me={me} />; break;
-      case '/compose': page = <ComposePage me={me} navigate={navigate} />; break;
-      default: page = (
-        <div className="empty card">
-          <p>Page not found.</p>
-          <button className="btn btn-primary" onClick={() => navigate('/compose')}>Go to Compose</button>
-        </div>
-      );
+      case '/app/queue': page = <QueuePage me={me} navigate={navigate} />; break;
+      case '/app/calendar': page = <CalendarPage me={me} />; break;
+      case '/app/accounts': page = <AccountsPage />; break;
+      case '/app/settings': page = <SettingsPage me={me} navigate={navigate} onLogout={logout} />; break;
+      case '/app/diagnostics': page = <DiagnosticsPage me={me} />; break;
+      case '/app/setup': page = <SetupCenterPage me={me} navigate={navigate} />; break;
+      case '/app/compose': page = <ComposePage me={me} navigate={navigate} />; break;
+      default: page = LOADING;
     }
   } else {
-    page = <LoginPage onDone={() => navigate('/compose')} />;
+    page = LOADING;
   }
 
   return (

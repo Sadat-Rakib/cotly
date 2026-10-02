@@ -39,3 +39,4 @@ Publishes to Facebook **Pages** via the Graph API v21.0 (profile/timeline postin
 ## Notes
 - Text, up to 10 images, one video per post. Images are attached as unpublished photos, then posted via `/feed` with `attached_media`.
 - Media is fetched by Meta from a short-lived (~1h) signed R2 GET URL — R2 S3 credentials must be configured (see README deploy steps).
+- **Test connection** (Accounts page) probes the page token via `/me?fields=id,name`; expired tokens prompt a reconnect. `pages_manage_posts` is only fully verified by an actual publish.

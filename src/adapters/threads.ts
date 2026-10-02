@@ -4,6 +4,7 @@ import type { PlatformAdapter, PublishInput, PublishOutcome, SocialAccountRecord
 import {
   fail,
   graphError,
+  graphTestConnection,
   httpJson,
   oauthError,
   outcomeFromError,
@@ -11,6 +12,7 @@ import {
   requireId,
   type ProviderResponse,
   type Secrets,
+  type TestConnectionResult,
 } from './_shared';
 
 const DIALOG = 'https://threads.net/oauth/authorize';
@@ -74,6 +76,17 @@ export class ThreadsAdapter implements PlatformAdapter {
       tokens: { accessToken },
       scopes: SCOPE,
     };
+  }
+
+  async testConnection(env: Env, account: SocialAccountRecord): Promise<TestConnectionResult> {
+    return graphTestConnection({
+      url: `${GRAPH}/me?fields=id,username`,
+      token: account.accessToken,
+      secrets: secretsOf(env, account.accessToken),
+      platformName: 'Threads',
+      identityField: 'username',
+      fallbackIdentity: account.displayName,
+    });
   }
 
   // Two-step: container, then publish. The container is returned as the pending

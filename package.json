@@ -4,10 +4,11 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "npm run db:local && wrangler dev",
+    "dev": "npm run db:local && wrangler dev --config ./wrangler.toml",
+    "dev:cotly": "npm run dev",
     "build": "vite build",
     "test": "vitest run",
-    "deploy": "npm run build && wrangler deploy",
+    "deploy": "npm run build && wrangler deploy --config ./wrangler.toml",
     "db:local": "wrangler d1 migrations apply cotly-db --local",
     "db:remote": "wrangler d1 migrations apply cotly-db --remote",
     "typecheck": "tsc --noEmit"

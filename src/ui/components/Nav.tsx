@@ -1,11 +1,12 @@
 import { useCallback, useEffect } from 'react';
 
 const ITEMS = [
-  { path: '/compose', label: 'Compose' },
-  { path: '/queue', label: 'Queue' },
-  { path: '/calendar', label: 'Calendar' },
-  { path: '/accounts', label: 'Accounts' },
-  { path: '/settings', label: 'Settings' },
+  { path: '/app/compose', label: 'Compose' },
+  { path: '/app/queue', label: 'Queue' },
+  { path: '/app/calendar', label: 'Calendar' },
+  { path: '/app/accounts', label: 'Accounts' },
+  { path: '/app/setup', label: 'Setup' },
+  { path: '/app/settings', label: 'Settings' },
 ];
 
 interface Props {
@@ -29,7 +30,7 @@ export function Nav({ path, email, onNavigate, onLogout }: Props) {
   return (
     <nav className="nav">
       <div className="nav-inner">
-        <span className="brand" onClick={() => onNavigate('/compose')}>Cotly</span>
+        <span className="brand" onClick={() => onNavigate('/app/compose')}>Cotly</span>
         <div className="nav-links">
           {ITEMS.map((i) => (
             <button

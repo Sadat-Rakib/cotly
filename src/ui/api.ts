@@ -47,7 +47,9 @@ export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Pro
   }
   if (res.status === 401 && !path.startsWith('/api/auth/')) {
     const here = window.location.pathname;
-    if (here !== '/login' && here !== '/setup') window.location.assign('/login');
+    // '/' is the public landing page — leave visitors there; the router sends
+    // them to /login only when they try to open the app.
+    if (here !== '/login' && here !== '/setup' && here !== '/') window.location.assign('/login');
     throw new ApiError(401, 'Session expired. Please sign in again.');
   }
   const data: unknown = await res.json().catch(() => null);
@@ -81,6 +83,7 @@ export interface Me {
   email: string;
   timezone: string;
   isSetup: boolean;
+  mockEnabled?: boolean; // MOCK_SOCIAL_ENABLED — surfaces the MockSocial connect form
 }
 
 export type AccountStatus = 'connected' | 'needs_reconnect' | 'disabled';
@@ -161,8 +164,12 @@ export function asRows<T>(data: unknown): T[] {
   return [];
 }
 
-export function providerLabel(p: Provider): string {
+// Accepts any provider string the API may return (incl. unimplemented ones
+// like 'tiktok' that are not part of the Provider union).
+export function providerLabel(p: string): string {
   if (p === 'mock') return 'MockSocial';
+  if (p === 'x') return 'X';
+  if (p === 'tiktok') return 'TikTok';
   return p.charAt(0).toUpperCase() + p.slice(1);
 }
 

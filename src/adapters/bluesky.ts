@@ -8,8 +8,12 @@ import {
   mediaBytes,
   needsReconnect,
   outcomeFromError,
+  redact,
+  testErrorDetail,
+  testNetworkResult,
   type ProviderResponse,
   type Secrets,
+  type TestConnectionResult,
 } from './_shared';
 
 const BASE = 'https://bsky.social';
@@ -102,6 +106,46 @@ export class BlueskyAdapter implements PlatformAdapter {
       ...(data.refreshJwt ? { refreshToken: data.refreshJwt } : { ...(tokens.refreshToken ? { refreshToken: tokens.refreshToken } : {}) }),
       ...(jwtExp(data.accessJwt) ? { expiresAt: jwtExp(data.accessJwt) } : {}),
     };
+  }
+
+  // Report-only probe: a successful refresh here is NOT persisted — engine/API still owns tokens.
+  async testConnection(env: Env, account: SocialAccountRecord): Promise<TestConnectionResult> {
+    const secrets = secretsOf(account.accessToken, account.refreshToken);
+    let resp: ProviderResponse;
+    try {
+      resp = await httpJson(`${BASE}/xrpc/com.atproto.server.getSession`, {
+        headers: { authorization: `Bearer ${account.accessToken}` },
+      });
+    } catch (e) {
+      return testNetworkResult(e, 'Bluesky') ?? { ok: false, detail: 'Bluesky connection test failed unexpectedly. Try again.' };
+    }
+    if (resp.ok) {
+      const raw = (resp.data as { handle?: unknown } | null)?.handle;
+      const handle = redact(typeof raw === 'string' && raw ? raw : account.displayName, secrets);
+      return { ok: true, detail: `Token valid — identity ${handle}.` };
+    }
+    // Invalid/expired token: attempt exactly one refreshSession before giving up.
+    if (isAuthFailure(resp) && account.refreshToken) {
+      let renewed: ProviderResponse;
+      try {
+        renewed = await httpJson(`${BASE}/xrpc/com.atproto.server.refreshSession`, {
+          method: 'POST',
+          headers: { authorization: `Bearer ${account.refreshToken}` },
+        });
+      } catch {
+        return { ok: false, detail: 'Session expired and could not be renewed. Reconnect Bluesky.' };
+      }
+      if (renewed.ok) {
+        const raw = (renewed.data as { handle?: unknown } | null)?.handle;
+        const handle = redact(typeof raw === 'string' && raw ? raw : account.displayName, secrets);
+        return { ok: true, detail: `Session renewed — token valid for ${handle}. Cotly will pick up the renewed token on next use.` };
+      }
+    }
+    if (isAuthFailure(resp)) {
+      return { ok: false, detail: 'Session expired and could not be renewed. Reconnect Bluesky.' };
+    }
+    const message = (resp.data as { message?: unknown } | null)?.message;
+    return { ok: false, detail: testErrorDetail(typeof message === 'string' ? message : '', secrets, 'Bluesky') };
   }
 
   async publish(env: Env, input: PublishInput): Promise<PublishOutcome> {

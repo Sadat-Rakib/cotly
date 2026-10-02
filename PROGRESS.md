@@ -1,6 +1,22 @@
 # Cotly Progress Checkpoint
 
-Last updated: 2026-10-01. Resume from here — do not restart from scratch.
+Last updated: 2026-10-02 (v0.2). Resume from here — do not restart from scratch.
+
+## v0.2 (this session — per MASTER EXECUTION PRD)
+- Baseline re-verified; fixed latent test-secret time-bomb (suites now force ENCRYPTION_SECRET; pool .dev.vars loading had flipped).
+- Setup Center backend: GET /api/setup/status (deployment probes, per-provider config badges, real-state launch checklist), GET /api/media/:id/url (presigned GET, owner-only), POST /api/accounts/:id/test (adapter testConnection).
+- Adapters: testConnection for facebook/threads/linkedin/bluesky (bluesky attempts session refresh, report-only).
+- UI: public landing at `/` (honest platform badges), app under /app/*, Setup Center page, onboarding welcome panel, composer media ordering + caption-overflow warnings + MANDATORY review/confirm gate (no POST /api/posts without explicit Confirm), accounts test-connection, media preview URLs.
+- npm scripts now always pass `--config ./wrangler.toml` (dev, deploy) — parent-tanstack config hijack can't recur.
+- 92/92 tests green, tsc clean, vite build clean.
+
+## Deployment status
+- `npx wrangler whoami` → NOT authenticated. Human step required: `npx wrangler login` in Cotly dir (or CLOUDFLARE_API_TOKEN env). Then: d1 create → paste id in wrangler.toml → r2 bucket create → db:remote → build+deploy → secrets (ENCRYPTION_SECRET, SESSION_SECRET; R2 S3 creds optional for media) → /setup on the worker URL.
+
+## Next steps after deploy
+1. Owner bootstrap on production URL.
+2. First real provider per PRD §9: Bluesky is fastest legitimate route (app password, no app review). Meta/LinkedIn routes need developer apps + callback URLs (Setup Center shows exact callback per provider).
+3. Live tests per PRD §22: Publish Now + Cloud Scheduled (local env closed), evidence recorded per §37. NEVER publish real content without explicit user approval (§20).
 
 ## What finished (this session)
 - Full initial build per MASTER BUILD PRD, in goal-mandated order: scheduler engine + MockSocial first, Tier-1 adapters second, expansion deferred.

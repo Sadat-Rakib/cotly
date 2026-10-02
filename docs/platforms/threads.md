@@ -39,3 +39,4 @@ Add the exact URI under the Threads app's redirect settings in the Meta app dash
 - Cotly currently publishes one image or one video per Threads post (no carousel), 500-char captions enforced.
 - Media is fetched by Threads from a ~1h signed R2 GET URL (R2 S3 credentials required).
 - Container status polling uses `status_code` (FINISHED / IN_PROGRESS / EXPIRED) — confirm field availability during live test.
+- **Test connection** (Accounts page) probes the token via `/me?fields=id,username`; expired tokens prompt a reconnect. Container publishing rights are only proven by an actual publish.

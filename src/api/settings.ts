@@ -1,6 +1,6 @@
 import type { Env } from '../contracts/env';
 import { HttpError, json, readJson } from '../lib/http';
-import { isValidTimezone, nowS } from './_shared';
+import { isValidTimezone, nowS, deploymentStatus } from './_shared';
 
 const KEYS = ['timezone', 'media_retention_hours', 'x_budget_mode', 'x_budget_monthly_usd'] as const;
 
@@ -103,6 +103,12 @@ export async function getDiagnostics(env: Env): Promise<Response> {
   } catch {
     r2Ok = false;
   }
+  const deployment = await deploymentStatus(env);
+  // cleanup.ts logs event='media_cleanup' only when it actually deleted objects.
+  const lastCleanup = await env.DB
+    .prepare(`SELECT created_at FROM activity_log WHERE event = 'media_cleanup' ORDER BY created_at DESC, rowid DESC LIMIT 1`)
+    .first<{ created_at: number }>()
+    .catch(() => null);
   return json({
     lastTickAt,
     dueCount,
@@ -112,5 +118,7 @@ export async function getDiagnostics(env: Env): Promise<Response> {
     recentAttempts: attempts.results ?? [],
     providers,
     r2Ok,
+    deployment,
+    cleanup: { lastCleanupAt: lastCleanup?.created_at ?? null },
   });
 }

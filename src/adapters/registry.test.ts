@@ -34,6 +34,12 @@ describe('adapter registry', () => {
     }
   });
 
+  it('exposes testConnection on the four real providers', () => {
+    for (const provider of ['facebook', 'threads', 'linkedin', 'bluesky'] as const) {
+      expect(typeof getAdapter(provider).testConnection).toBe('function');
+    }
+  });
+
   it('assisted never publishes and reports the handoff reason', async () => {
     const out = await getAdapter('assisted').publish(env, input());
     expect(out).toEqual({ kind: 'assisted', reason: 'Post ready for manual publishing.' });

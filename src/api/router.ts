@@ -6,6 +6,7 @@ import * as auth from './auth';
 import * as media from './media';
 import * as posts from './posts';
 import * as settings from './settings';
+import * as setup from './setup';
 
 export async function handleApi(req: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
   try {
@@ -39,10 +40,14 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (method === 'POST' && path === '/api/auth/logout') return auth.logout(req);
   if (method === 'GET' && path === '/api/me') return auth.me(req, env);
 
-  await requireSession(env, req);
+  const userId = await requireSession(env, req);
 
+  if (method === 'GET' && path === '/api/setup/status') return setup.getSetupStatus(env);
   if (method === 'GET' && path === '/api/accounts') return accounts.listAccounts(env);
   if (method === 'DELETE' && seg.length === 3 && seg[1] === 'accounts') return accounts.removeAccount(env, seg[2] as string);
+  if (method === 'POST' && seg.length === 4 && seg[1] === 'accounts' && seg[3] === 'test') {
+    return accounts.testAccount(env, seg[2] as string);
+  }
   if (method === 'POST' && path === '/api/accounts/bluesky') return accounts.connectBluesky(req, env);
   if (method === 'POST' && path === '/api/accounts/mock') return accounts.connectMock(req, env);
   if (method === 'GET' && seg.length === 4 && seg[1] === 'oauth' && seg[3] === 'start') {
@@ -51,6 +56,9 @@ async function route(req: Request, env: Env): Promise<Response> {
 
   if (method === 'POST' && path === '/api/media/upload-url') return media.uploadUrl(req, env);
   if (method === 'POST' && path === '/api/media/confirm') return media.confirm(req, env);
+  if (method === 'GET' && seg.length === 4 && seg[1] === 'media' && seg[3] === 'url') {
+    return media.mediaUrl(env, seg[2] as string, userId);
+  }
 
   if (method === 'POST' && path === '/api/posts') return posts.create(req, env);
   if (method === 'GET' && path === '/api/posts') return posts.list(req, env);

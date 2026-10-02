@@ -6,12 +6,12 @@ import {
   providerLabel,
   type Account,
   type Me,
-  type MediaRow,
   type PostRow,
   type TargetRow,
 } from '../api';
 import { StatusBadge } from '../components/Badge';
 import { Modal } from '../components/Modal';
+import { MediaThumb } from '../components/MediaThumb';
 import { MediaPicker, type MediaItem } from '../components/MediaPicker';
 import { TimezoneSelect } from '../components/TimezoneSelect';
 import { useToast } from '../components/Toasts';
@@ -33,18 +33,6 @@ function captionPreview(p: PostRow): string {
 
 function badTargets(p: PostRow): TargetRow[] {
   return p.targets.filter((t) => t.status === 'failed' || t.status === 'needs_reconnect');
-}
-
-function Thumb({ media }: { media?: MediaRow[] }) {
-  const first = media?.[0];
-  if (!first) return null;
-  return (
-    <div className="thumb qthumb">
-      {first.url && first.mime.startsWith('image/')
-        ? <img src={first.url} alt="" />
-        : <span className="thumb-file">{first.mime.startsWith('video/') ? 'video' : 'media'}</span>}
-    </div>
-  );
 }
 
 export function QueuePage({ me, navigate }: Props) {
@@ -140,7 +128,7 @@ export function QueuePage({ me, navigate }: Props) {
           <span>
             {new Set(needsReconnect.map((t) => t.provider)).size} account(s) need reconnection.
           </span>
-          <button className="btn btn-sm" onClick={() => navigate('/accounts')}>Reconnect</button>
+          <button className="btn btn-sm" onClick={() => navigate('/app/accounts')}>Reconnect</button>
         </div>
       )}
 
@@ -148,7 +136,7 @@ export function QueuePage({ me, navigate }: Props) {
       {!loading && list.length === 0 && (
         <div className="empty card">
           <p>Nothing here yet. Compose a post to fill this queue.</p>
-          <button className="btn btn-primary" onClick={() => navigate('/compose')}>Compose</button>
+          <button className="btn btn-primary" onClick={() => navigate('/app/compose')}>Compose</button>
         </div>
       )}
 
@@ -158,7 +146,7 @@ export function QueuePage({ me, navigate }: Props) {
           const editable = p.status === 'draft' || p.status === 'scheduled';
           return (
             <article key={p.id} className="card qitem">
-              <Thumb media={p.media} />
+              <MediaThumb media={p.media?.[0]} className="qthumb" />
               <div className="qitem-body">
                 <div className="qitem-top">
                   <time className="qtime">{fmtDateTime(p.scheduledAt, tz)}</time>
@@ -191,7 +179,7 @@ export function QueuePage({ me, navigate }: Props) {
                           Retry {providerLabel(t.provider)}
                         </button>
                       ))}
-                      <button className="btn btn-sm" onClick={() => navigate('/accounts')}>
+                      <button className="btn btn-sm" onClick={() => navigate('/app/accounts')}>
                         {(() => {
                         const badProviders = [...new Set(bad.map((t) => t.provider))];
                         const single = badProviders.length === 1 ? badProviders[0] : undefined;

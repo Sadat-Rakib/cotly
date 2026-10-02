@@ -1,9 +1,10 @@
 import { getCapabilities } from '../contracts/capabilities';
 import type { Env } from '../contracts/env';
-import type { MediaRecord, PlatformAdapter, PublishInput, PublishOutcome } from '../contracts/types';
+import type { MediaRecord, PlatformAdapter, PublishInput, PublishOutcome, SocialAccountRecord } from '../contracts/types';
 import {
   fail,
   graphError,
+  graphTestConnection,
   httpJson,
   oauthError,
   outcomeFromError,
@@ -11,6 +12,7 @@ import {
   requireId,
   type ProviderResponse,
   type Secrets,
+  type TestConnectionResult,
 } from './_shared';
 
 const GRAPH = 'https://graph.facebook.com/v21.0';
@@ -73,6 +75,19 @@ export class FacebookAdapter implements PlatformAdapter {
       tokens: { accessToken: page.access_token ?? userToken },
       scopes: SCOPE,
     };
+  }
+
+  // Probes the page token; page publishing rights can only be proven by a real publish.
+  async testConnection(env: Env, account: SocialAccountRecord): Promise<TestConnectionResult> {
+    return graphTestConnection({
+      url: `${GRAPH}/me?fields=id,name`,
+      token: account.accessToken,
+      secrets: secretsOf(env, account.accessToken),
+      platformName: 'Facebook',
+      identityField: 'name',
+      fallbackIdentity: account.displayName,
+      okSuffix: 'Page publishing permission (pages_manage_posts) can only be fully verified by an actual publish.',
+    });
   }
 
   async publish(env: Env, input: PublishInput): Promise<PublishOutcome> {

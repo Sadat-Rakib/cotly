@@ -42,3 +42,4 @@ Add the exact URI under Auth → **Redirect URLs**.
 ## Notes
 - Text + one image (registerUpload → PUT → post with `content.media.id`). Multi-image and video are not supported yet and fail with a clear human message.
 - Auth failures (401/403) map to `needs_reconnect` — reconnect from the Accounts page.
+- **Test connection** (Accounts page) probes the token via `/v2/userinfo`; expired tokens prompt a reconnect. Posting rights are only proven by an actual publish.

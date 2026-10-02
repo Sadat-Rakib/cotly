@@ -150,4 +150,32 @@ describe('threads adapter', () => {
     const out = await new ThreadsAdapter().publish(env, input());
     expect(out).toMatchObject({ kind: 'failed', retryable: true, errorCode: 'ETIMEDOUT' });
   });
+
+  it('testConnection validates the token and reports the username', async () => {
+    const calls = stubFetch([() => jsonRes(200, { id: 'th-user-1', username: 'tester' })]);
+    const res = await new ThreadsAdapter().testConnection(env, account());
+    expect(res).toEqual({ ok: true, detail: 'Token valid — identity tester.' });
+    expect(calls[0]?.url).toContain('graph.threads.net/v1.0/me?fields=id,username');
+    expect(new Headers(calls[0]?.init?.headers).get('authorization')).toBe(`Bearer ${TOKEN}`);
+    expect(res.detail).not.toContain(TOKEN);
+  });
+
+  it('testConnection maps auth failures to a reconnect prompt without leaking the token', async () => {
+    stubFetch([() => new Response('', { status: 401 })]);
+    const res = await new ThreadsAdapter().testConnection(env, account());
+    expect(res).toEqual({ ok: false, detail: 'Your Threads connection expired. Reconnect Threads.' });
+    expect(res.detail).not.toContain(TOKEN);
+  });
+
+  it('testConnection maps timeouts to a try-again message', async () => {
+    stubFetch([
+      () => {
+        const e = new Error('aborted');
+        e.name = 'TimeoutError';
+        throw e;
+      },
+    ]);
+    const res = await new ThreadsAdapter().testConnection(env, account());
+    expect(res).toEqual({ ok: false, detail: 'Threads did not respond in time. Try again.' });
+  });
 });

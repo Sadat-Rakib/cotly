@@ -27,3 +27,4 @@ None — app passwords grant the session. No OAuth redirect URI is used; Cotly c
 ## Notes
 - Images are fetched from R2 by Cotly and re-uploaded as AT Protocol blobs (`uploadBlob`) — R2 S3 credentials are required for image posts, text posts work without them.
 - Auth failures after a refresh attempt map to `needs_reconnect`; disconnect and re-enter a fresh app password.
+- **Test connection** (Accounts page) probes the session via `getSession` and renews it once via `refreshSession` if expired (renewal is report-only — Cotly picks up the new token on next use); a failed renewal prompts a reconnect.

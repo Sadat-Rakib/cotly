@@ -140,6 +140,74 @@ export function oauthError(params: URLSearchParams, platformName: string): void 
   }
 }
 
+// --- Connection tests (POST /api/accounts/:id/test) -------------------------------------
+// testConnection never throws: every path returns {ok, detail}, and detail text is
+// always human-readable, redacted and free of tokens or auth headers.
+export interface TestConnectionResult {
+  ok: boolean;
+  detail: string;
+}
+
+// Non-auth provider rejection -> human detail, redacted + truncated, no reconnect advice.
+export function testErrorDetail(message: string, secrets: Secrets, platformName: string): string {
+  const summary = truncate(redact(message || `${platformName} returned an unexpected error.`, secrets), 200);
+  return `${summary} Try again.`;
+}
+
+// Network-layer failures thrown by httpJson as a test result; undefined for anything else.
+export function testNetworkResult(e: unknown, platformName: string): TestConnectionResult | undefined {
+  if (e instanceof OutcomeError && e.outcome.kind === 'failed') {
+    if (e.outcome.errorCode === 'ETIMEDOUT') {
+      return { ok: false, detail: `${platformName} did not respond in time. Try again.` };
+    }
+    if (e.outcome.errorCode === 'ENETWORK') {
+      return { ok: false, detail: `Cotly could not reach ${platformName}. Try again.` };
+    }
+  }
+  return undefined;
+}
+
+// Shared /me identity probe for the Meta Graph providers (Facebook, Threads).
+// Auth failures mirror graphError's reconnect mapping (status 401, code 190/102, token message).
+export async function graphTestConnection(opts: {
+  url: string;
+  token: string;
+  secrets: Secrets;
+  platformName: 'Facebook' | 'Threads';
+  identityField: 'name' | 'username';
+  fallbackIdentity: string;
+  okSuffix?: string;
+}): Promise<TestConnectionResult> {
+  let resp: ProviderResponse;
+  try {
+    resp = await httpJson(opts.url, { headers: { authorization: `Bearer ${opts.token}` } });
+  } catch (e) {
+    return (
+      testNetworkResult(e, opts.platformName) ??
+      { ok: false, detail: `${opts.platformName} connection test failed unexpectedly. Try again.` }
+    );
+  }
+  if (resp.ok) {
+    const data = (resp.data ?? {}) as Record<string, unknown>;
+    if (typeof data.id === 'string' && data.id) {
+      const raw = data[opts.identityField];
+      const identity = redact(typeof raw === 'string' && raw ? raw : opts.fallbackIdentity, opts.secrets);
+      return { ok: true, detail: `Token valid — identity ${identity}.${opts.okSuffix ? ` ${opts.okSuffix}` : ''}` };
+    }
+    return { ok: false, detail: `${opts.platformName} returned an unexpected response. Try again.` };
+  }
+  const gerr = (resp.data as { error?: Record<string, unknown> } | null)?.error ?? {};
+  const code = Number(gerr.code ?? 0);
+  const message =
+    (typeof gerr.error_user_msg === 'string' && gerr.error_user_msg) ||
+    (typeof gerr.message === 'string' && gerr.message) ||
+    '';
+  if (resp.status === 401 || code === 190 || code === 102 || /access token/i.test(message)) {
+    return { ok: false, detail: `Your ${opts.platformName} connection expired. Reconnect ${opts.platformName}.` };
+  }
+  return { ok: false, detail: testErrorDetail(message, opts.secrets, opts.platformName) };
+}
+
 export async function mediaBytes(env: Env, media: MediaRecord): Promise<Uint8Array<ArrayBuffer>> {
   const obj = await env.MEDIA.get(media.r2Key);
   if (!obj) {

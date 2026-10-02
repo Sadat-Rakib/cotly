@@ -174,4 +174,51 @@ describe('bluesky adapter', () => {
     expect(tokens).toEqual({ accessToken: makeJwt(8888888888), refreshToken: REFRESH, expiresAt: 8888888888 });
     expect(new Headers(calls[0]?.init?.headers).get('Authorization')).toBe(`Bearer ${REFRESH}`);
   });
+
+  it('testConnection validates the session and reports the handle', async () => {
+    const calls = stubFetch([() => jsonRes(200, { handle: 'tester.bsky.social', did: 'did:plc:abc123', active: true })]);
+    const res = await new BlueskyAdapter().testConnection(env, account());
+    expect(res).toEqual({ ok: true, detail: 'Token valid — identity tester.bsky.social.' });
+    expect(calls[0]?.url).toContain('com.atproto.server.getSession');
+    expect(new Headers(calls[0]?.init?.headers).get('authorization')).toBe(`Bearer ${ACCESS}`);
+    expect(res.detail).not.toContain(ACCESS);
+    expect(res.detail).not.toContain(REFRESH);
+  });
+
+  it('testConnection renews an expired session once and reports the renewed token', async () => {
+    const calls = stubFetch([
+      () => jsonRes(401, { error: 'InvalidToken' }),
+      () => jsonRes(200, { handle: 'tester.bsky.social', accessJwt: makeJwt(9999999999), refreshJwt: REFRESH }),
+    ]);
+    const res = await new BlueskyAdapter().testConnection(env, account());
+    expect(res).toEqual({
+      ok: true,
+      detail: 'Session renewed — token valid for tester.bsky.social. Cotly will pick up the renewed token on next use.',
+    });
+    expect(calls).toHaveLength(2);
+    expect(new Headers(calls[1]?.init?.headers).get('authorization')).toBe(`Bearer ${REFRESH}`);
+    expect(res.detail).not.toContain(ACCESS);
+    expect(res.detail).not.toContain(REFRESH);
+  });
+
+  it('testConnection asks for reconnect when the refresh also fails', async () => {
+    const calls = stubFetch([() => jsonRes(401, { error: 'ExpiredToken' }), () => jsonRes(401, { error: 'InvalidToken' })]);
+    const res = await new BlueskyAdapter().testConnection(env, account());
+    expect(res).toEqual({ ok: false, detail: 'Session expired and could not be renewed. Reconnect Bluesky.' });
+    expect(calls).toHaveLength(2);
+    expect(res.detail).not.toContain(ACCESS);
+    expect(res.detail).not.toContain(REFRESH);
+  });
+
+  it('testConnection maps timeouts to a try-again message', async () => {
+    stubFetch([
+      () => {
+        const e = new Error('aborted');
+        e.name = 'TimeoutError';
+        throw e;
+      },
+    ]);
+    const res = await new BlueskyAdapter().testConnection(env, account());
+    expect(res).toEqual({ ok: false, detail: 'Bluesky did not respond in time. Try again.' });
+  });
 });

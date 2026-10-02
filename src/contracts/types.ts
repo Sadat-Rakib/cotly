@@ -108,4 +108,5 @@ export interface PlatformAdapter {
   refresh?(env: Env, tokens: AccountTokens): Promise<AccountTokens>;
   publish(env: Env, input: PublishInput): Promise<PublishOutcome>;
   resolvePending?(env: Env, account: SocialAccountRecord, externalId: string): Promise<PublishOutcome>;
+  testConnection?(env: Env, account: SocialAccountRecord): Promise<{ ok: boolean; detail: string }>;
 }

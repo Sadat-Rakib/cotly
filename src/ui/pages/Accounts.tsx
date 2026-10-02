@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ApiError, api, providerLabel, type Account, type Provider } from '../api';
 import { StatusBadge } from '../components/Badge';
 import { useToast } from '../components/Toasts';
+import { relTime } from '../time';
 
 interface Card {
   provider: Provider;
@@ -94,6 +95,24 @@ export function AccountsPage() {
     }
   };
 
+  // POST /api/accounts/:id/test -> {ok, detail}; 400 when the adapter has no
+  // testConnection. Detail is human-readable and never contains tokens.
+  const testConnection = async (a: Account) => {
+    const label = `${providerLabel(a.provider)} (${a.displayName})`;
+    try {
+      const r = await api<{ ok: boolean; detail: string }>(`/api/accounts/${a.id}/test`, { method: 'POST' });
+      if (r.ok) {
+        toast('ok', `${label}: ${r.detail}`);
+        await load(); // last_verified_at was just refreshed
+      } else {
+        toast('err', `${label}: ${r.detail || 'Connection check failed.'}`);
+      }
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 400) toast('info', `${label}: ${e.message}`);
+      else toast('err', e instanceof ApiError ? `${label}: ${e.message}` : `${label}: connection test failed`);
+    }
+  };
+
   return (
     <div className="accounts">
       <h1>Accounts</h1>
@@ -153,10 +172,19 @@ export function AccountsPage() {
                 {list.map((a) => (
                   <li key={a.id} className="account-row">
                     <div className="account-info">
-                      <span className="dest-name">{a.displayName}</span>
+                      {a.avatarUrl
+                        ? <img className="avatar" src={a.avatarUrl} alt="" referrerPolicy="no-referrer" />
+                        : <span className="avatar avatar-fallback" aria-hidden="true">{a.displayName.charAt(0).toUpperCase()}</span>}
+                      <div className="account-id">
+                        <span className="dest-name">{a.displayName}</span>
+                        <span className="account-verified">Last verified: {relTime(a.lastVerifiedAt)}</span>
+                      </div>
                       <StatusBadge status={a.status} />
                     </div>
-                    <button className="btn btn-ghost btn-sm" onClick={() => void disconnect(a)}>Disconnect</button>
+                    <div className="account-actions">
+                      <button className="btn btn-sm" onClick={() => void testConnection(a)}>Test connection</button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => void disconnect(a)}>Disconnect</button>
+                    </div>
                   </li>
                 ))}
               </ul>

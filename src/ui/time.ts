@@ -58,6 +58,26 @@ export function fmtFullDateTime(epochSec: number, tz: string): string {
   }).format(new Date(epochSec * 1000));
 }
 
+// "October 4, 2:00 PM" — long month, no weekday; used on the review screen.
+export function fmtLongDateTime(epochSec: number, tz: string): string {
+  const d = new Date(epochSec * 1000);
+  const date = new Intl.DateTimeFormat('en-US', { timeZone: tz, month: 'long', day: 'numeric' }).format(d);
+  const time = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit' }).format(d);
+  return `${date}, ${time}`;
+}
+
+// Relative "2h ago" for last-verified markers.
+export function relTime(epochSec?: number | null): string {
+  if (!epochSec || epochSec <= 0) return 'never';
+  const diff = Math.floor(Date.now() / 1000) - epochSec;
+  if (diff < 45) return 'just now';
+  if (diff < 3600) return `${Math.max(1, Math.round(diff / 60))}m ago`;
+  if (diff < 86_400) return `${Math.round(diff / 3600)}h ago`;
+  if (diff < 14 * 86_400) return `${Math.round(diff / 86_400)}d ago`;
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    .format(new Date(epochSec * 1000));
+}
+
 // Local calendar day key in tz: 'YYYY-MM-DD'.
 export function dayKey(epochSec: number, tz: string): string {
   const p = zonedParts(new Date(epochSec * 1000), tz, { year: 'numeric', month: '2-digit', day: '2-digit' });

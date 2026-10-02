@@ -151,4 +151,32 @@ describe('linkedin adapter', () => {
     const out = await new LinkedInAdapter().publish(env, input());
     expect(out).toMatchObject({ kind: 'failed', retryable: true, errorCode: 'ETIMEDOUT' });
   });
+
+  it('testConnection validates the token and reports the member name', async () => {
+    const calls = stubFetch([() => jsonRes(200, { sub: 'sub-123', name: 'Test Member' })]);
+    const res = await new LinkedInAdapter().testConnection(env, account());
+    expect(res).toEqual({ ok: true, detail: 'Token valid — identity Test Member.' });
+    expect(calls[0]?.url).toContain('api.linkedin.com/v2/userinfo');
+    expect(new Headers(calls[0]?.init?.headers).get('authorization')).toBe(`Bearer ${TOKEN}`);
+    expect(res.detail).not.toContain(TOKEN);
+  });
+
+  it('testConnection maps 401 to a reconnect prompt without leaking the token', async () => {
+    stubFetch([() => new Response('', { status: 401 })]);
+    const res = await new LinkedInAdapter().testConnection(env, account());
+    expect(res).toEqual({ ok: false, detail: 'Your LinkedIn connection expired. Reconnect LinkedIn.' });
+    expect(res.detail).not.toContain(TOKEN);
+  });
+
+  it('testConnection maps timeouts to a try-again message', async () => {
+    stubFetch([
+      () => {
+        const e = new Error('aborted');
+        e.name = 'TimeoutError';
+        throw e;
+      },
+    ]);
+    const res = await new LinkedInAdapter().testConnection(env, account());
+    expect(res).toEqual({ ok: false, detail: 'LinkedIn did not respond in time. Try again.' });
+  });
 });

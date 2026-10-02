@@ -1,6 +1,6 @@
 import { getCapabilities } from '../contracts/capabilities';
 import type { Env } from '../contracts/env';
-import type { MediaRecord, PlatformAdapter, PublishInput, PublishOutcome } from '../contracts/types';
+import type { MediaRecord, PlatformAdapter, PublishInput, PublishOutcome, SocialAccountRecord } from '../contracts/types';
 import {
   fail,
   failRetryable,
@@ -9,8 +9,12 @@ import {
   needsReconnect,
   oauthError,
   outcomeFromError,
+  redact,
+  testErrorDetail,
+  testNetworkResult,
   type ProviderResponse,
   type Secrets,
+  type TestConnectionResult,
 } from './_shared';
 
 const AUTH = 'https://www.linkedin.com/oauth/v2/authorization';
@@ -82,6 +86,31 @@ export class LinkedInAdapter implements PlatformAdapter {
       tokens: { accessToken },
       scopes: SCOPE,
     };
+  }
+
+  // Probes the member token via the same userinfo endpoint used at connect time.
+  async testConnection(env: Env, account: SocialAccountRecord): Promise<TestConnectionResult> {
+    const secrets = secretsOf(env, account.accessToken);
+    let resp: ProviderResponse;
+    try {
+      resp = await httpJson(`${REST}/v2/userinfo`, { headers: { authorization: `Bearer ${account.accessToken}` } });
+    } catch (e) {
+      return testNetworkResult(e, 'LinkedIn') ?? { ok: false, detail: 'LinkedIn connection test failed unexpectedly. Try again.' };
+    }
+    if (resp.ok) {
+      const data = (resp.data ?? {}) as Record<string, unknown>;
+      if (typeof data.sub === 'string' && data.sub) {
+        const raw = data.name;
+        const identity = redact(typeof raw === 'string' && raw ? raw : account.displayName, secrets);
+        return { ok: true, detail: `Token valid — identity ${identity}.` };
+      }
+      return { ok: false, detail: 'LinkedIn returned an unexpected response. Try again.' };
+    }
+    if (resp.status === 401 || resp.status === 403) {
+      return { ok: false, detail: 'Your LinkedIn connection expired. Reconnect LinkedIn.' };
+    }
+    const message = (resp.data as { message?: unknown } | null)?.message;
+    return { ok: false, detail: testErrorDetail(typeof message === 'string' ? message : '', secrets, 'LinkedIn') };
   }
 
   // LinkedIn returns no permalink from this API — confirm on provider_post_id evidence only.

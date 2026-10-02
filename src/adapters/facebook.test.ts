@@ -173,4 +173,36 @@ describe('facebook adapter', () => {
     const out = await new FacebookAdapter().publish(env, input());
     expect(out).toMatchObject({ kind: 'failed', retryable: true, errorCode: 'ETIMEDOUT' });
   });
+
+  it('testConnection validates the page token and reports the page identity', async () => {
+    const calls = stubFetch([() => jsonRes(200, { id: 'page-123', name: 'Test Page' })]);
+    const res = await new FacebookAdapter().testConnection(env, account());
+    expect(res).toEqual({
+      ok: true,
+      detail:
+        'Token valid — identity Test Page. Page publishing permission (pages_manage_posts) can only be fully verified by an actual publish.',
+    });
+    expect(calls[0]?.url).toContain('graph.facebook.com/v21.0/me?fields=id,name');
+    expect(new Headers(calls[0]?.init?.headers).get('authorization')).toBe(`Bearer ${TOKEN}`);
+    expect(res.detail).not.toContain(TOKEN);
+  });
+
+  it('testConnection maps auth failures to a reconnect prompt without leaking the token', async () => {
+    stubFetch([() => jsonRes(401, { error: { code: 190, message: 'Error validating access token: session expired' } })]);
+    const res = await new FacebookAdapter().testConnection(env, account());
+    expect(res).toEqual({ ok: false, detail: 'Your Facebook connection expired. Reconnect Facebook.' });
+    expect(res.detail).not.toContain(TOKEN);
+  });
+
+  it('testConnection maps timeouts to a try-again message', async () => {
+    stubFetch([
+      () => {
+        const e = new Error('aborted');
+        e.name = 'TimeoutError';
+        throw e;
+      },
+    ]);
+    const res = await new FacebookAdapter().testConnection(env, account());
+    expect(res).toEqual({ ok: false, detail: 'Facebook did not respond in time. Try again.' });
+  });
 });
