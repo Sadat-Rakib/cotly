@@ -4,6 +4,7 @@ import type { Env } from '../contracts/env';
 import { encryptSecret, randomId } from '../lib/crypto';
 import { handleApi } from './router';
 import schema from '../../migrations/0001_init.sql?raw';
+import schema0002 from '../../migrations/0002_user_name.sql?raw';
 
 // NOTE: this pool runs with per-test isolated storage — writes inside a test are
 // rolled back when it ends, while writes in beforeAll persist for every test.
@@ -63,6 +64,7 @@ beforeAll(async () => {
     .map((s) => s.trim())
     .filter(Boolean);
   for (const stmt of statements) await e.DB.prepare(stmt).run();
+  await e.DB.prepare(schema0002.trim()).run();
 
   const before = await api('/api/me', 'GET');
   preSetupMe = { status: before.status, isSetup: ((await before.json()) as { isSetup: boolean }).isSetup };
@@ -115,6 +117,38 @@ test('me with session exposes email, timezone and mockEnabled', async () => {
 test('me without a session once owner exists is 401', async () => {
   const res = await api('/api/me', 'GET');
   expect(res.status).toBe(401);
+});
+
+test('registration is closed unless ALLOW_REGISTRATION=true', async () => {
+  (env as unknown as Record<string, string | undefined>).ALLOW_REGISTRATION = undefined;
+  const closed = await api('/api/auth/register', 'POST', { email: 'new@test.dev', password: 'password123' });
+  expect(closed.status).toBe(403);
+});
+
+test('registration creates a user and starts a session when allowed', async () => {
+  (env as unknown as Record<string, string | undefined>).ALLOW_REGISTRATION = 'true';
+  const res = await api('/api/auth/register', 'POST', {
+    name: 'New User',
+    email: 'new@test.dev',
+    password: 'password123',
+    timezone: 'UTC',
+  });
+  expect(res.status).toBe(201);
+  const row = await e.DB.prepare('SELECT id, name, email FROM users WHERE email = ?').bind('new@test.dev').first<{ id: string; name: string | null; email: string }>();
+  expect(row?.email).toBe('new@test.dev');
+  expect(row?.name).toBe('New User');
+  expect(row?.id).not.toBe('owner');
+  // The session cookie from register authenticates /api/me.
+  const c = cookiesOf(res);
+  const me = await handleApi(
+    new Request(`${BASE}/api/me`, { headers: { cookie: `cotly_session=${c.cotly_session}` } }),
+    e,
+    ctx,
+  );
+  expect(me.status).toBe(200);
+  const body = (await me.json()) as { email: string; isSetup: boolean };
+  expect(body.email).toBe('new@test.dev');
+  expect(body.isSetup).toBe(true);
 });
 
 test('mutating route without x-csrf is 403', async () => {

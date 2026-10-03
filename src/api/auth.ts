@@ -46,6 +46,38 @@ export async function login(req: Request, env: Env): Promise<Response> {
   return withCookies(json({ ok: true }), await sessionCookiePair(env, req, user.id));
 }
 
+// Registration stays closed unless the deployment explicitly allows it. New
+// users get their own id; ownership scoping of existing tables lands with the
+// Neon migration (see PLATFORM_BLOCKERS.md).
+export async function register(req: Request, env: Env): Promise<Response> {
+  if (env.ALLOW_REGISTRATION !== 'true') throw new HttpError(403, 'Registration is closed on this Cotly deployment.');
+  const body = await readJson(req);
+  const name = String(body.name ?? '').trim().slice(0, 80);
+  const email = String(body.email ?? '').trim().toLowerCase();
+  const password = String(body.password ?? '');
+  const timezone = String(body.timezone ?? 'UTC').trim() || 'UTC';
+  if (!email.includes('@') || email.length > 320) throw new HttpError(400, 'Enter a valid email address.');
+  if (password.length < 8) throw new HttpError(400, 'Choose a password with at least 8 characters.');
+  if (!isValidTimezone(timezone)) throw new HttpError(400, 'Pick a valid time zone.');
+  const ip = req.headers.get('cf-connecting-ip') ?? 'unknown';
+  if (!(await allowAttempt(env, `register:${ip}`, 5, 15 * 60))) {
+    throw new HttpError(429, 'Too many attempts. Please wait 15 minutes and try again.');
+  }
+  const taken = await env.DB.prepare('SELECT 1 FROM users WHERE email = ?').bind(email).first();
+  if (taken) throw new HttpError(409, 'An account with that email already exists.');
+  const id = crypto.randomUUID();
+  const now = nowS();
+  await env.DB.prepare('INSERT INTO users (id, name, email, password_hash, timezone, created_at) VALUES (?,?,?,?,?,?)').bind(
+    id,
+    name || null,
+    email,
+    await hashPassword(password),
+    timezone,
+    now,
+  ).run();
+  return withCookies(json({ ok: true }, 201), await sessionCookiePair(env, req, id));
+}
+
 export async function logout(req: Request): Promise<Response> {
   const headers = new Headers({ 'content-type': 'application/json' });
   for (const c of clearedSessionCookies(new URL(req.url).protocol === 'https:')) headers.append('set-cookie', c);

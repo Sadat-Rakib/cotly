@@ -48,8 +48,9 @@ export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Pro
   if (res.status === 401 && !path.startsWith('/api/auth/')) {
     const here = window.location.pathname;
     // '/' is the public landing page — leave visitors there; the router sends
-    // them to /login only when they try to open the app.
-    if (here !== '/login' && here !== '/setup' && here !== '/') window.location.assign('/login');
+    // them to /login only when they try to open the app. /signup gets the same
+    // courtesy so the registration form can render its own state.
+    if (here !== '/login' && here !== '/signup' && here !== '/setup' && here !== '/') window.location.assign('/login');
     throw new ApiError(401, 'Session expired. Please sign in again.');
   }
   const data: unknown = await res.json().catch(() => null);

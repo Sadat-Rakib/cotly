@@ -161,7 +161,10 @@ a { color: var(--accent); }
    It is styled in Tailwind rem sizes, so give it the browser-standard 16px
    root (the app uses 15px); :has() keeps this scoped to the landing only. */
 .main-landing { max-width: none; margin: 0; padding: 0; }
-html:has(.main-landing) { font-size: 16px; }
+html:has(.main-landing, .main-auth) { font-size: 16px; }
+
+/* Auth pages are standalone dark screens, also full-bleed. */
+.main-auth { max-width: none; margin: 0; padding: 0; }
 
 /* ---------- Cards, banners, empty states ---------- */
 

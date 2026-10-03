@@ -11,6 +11,7 @@ import { QueuePage } from './pages/Queue';
 import { SettingsPage } from './pages/Settings';
 import { SetupCenterPage } from './pages/SetupCenter';
 import { SetupPage } from './pages/Setup';
+import { SignupPage } from './pages/Signup';
 
 const APP_ROUTES = new Set([
   '/app/compose', '/app/queue', '/app/calendar', '/app/accounts', '/app/settings', '/app/diagnostics', '/app/setup',
@@ -61,7 +62,7 @@ export default function App() {
   useEffect(() => {
     if (me === undefined) return;
     if (me === null) {
-      if (path !== '/' && path !== '/login' && path !== '/setup') navigate('/login');
+      if (path !== '/' && path !== '/login' && path !== '/signup' && path !== '/setup') navigate('/login');
       return;
     }
     if (!me.isSetup) {
@@ -69,7 +70,7 @@ export default function App() {
       return;
     }
     const query = window.location.search;
-    if (path === '/login' || path === '/setup' || path === '/app') navigate('/app/compose');
+    if (path === '/login' || path === '/signup' || path === '/setup' || path === '/app') navigate('/app/compose');
     else if (LEGACY_ALIASES[path]) navigate(`${LEGACY_ALIASES[path]}${query}`);
     else if (path !== '/' && !APP_ROUTES.has(path)) navigate('/');
   }, [me, path, navigate]);
@@ -96,19 +97,21 @@ export default function App() {
   // States the guard is about to redirect away from render as loading, never
   // as their (unauthorized) page.
   const waiting = me === null
-    ? path !== '/' && path !== '/login' && path !== '/setup'
+    ? path !== '/' && path !== '/login' && path !== '/signup' && path !== '/setup'
     : !me.isSetup
       ? path !== '/setup'
-      : path === '/login' || path === '/setup' || path === '/app'
+      : path === '/login' || path === '/signup' || path === '/setup' || path === '/app'
         || (!knownAppRoute && path !== '/' && !LEGACY_ALIASES[path]);
 
   if (waiting) return LOADING;
 
   let page: ReactElement;
   if (path === '/') {
-    page = <Landing navigate={navigate} />;
+    page = <Landing navigate={navigate} authed={authed} />;
   } else if (path === '/login') {
-    page = <LoginPage onDone={() => { refreshMe(); navigate('/app/compose'); }} />;
+    page = <LoginPage onDone={() => { refreshMe(); navigate('/app/compose'); }} onNav={navigate} />;
+  } else if (path === '/signup' && !authed) {
+    page = <SignupPage onDone={() => { refreshMe(); navigate('/app/compose'); }} onNav={navigate} />;
   } else if (path === '/setup' && (!authed || !me.isSetup)) {
     page = <SetupPage onDone={() => { refreshMe(); navigate('/app/compose'); }} />;
   } else if (authed && knownAppRoute) {
@@ -129,7 +132,19 @@ export default function App() {
   return (
     <div className="app">
       {authed && path !== '/' && <Nav path={path} email={me.email} onNavigate={navigate} onLogout={logout} />}
-      <main className={path === '/' ? 'main main-landing' : authed ? 'main' : 'main main-bare'}>{page}</main>
+      <main
+        className={
+          path === '/'
+            ? 'main main-landing'
+            : path === '/login' || path === '/signup'
+              ? 'main main-auth'
+              : authed
+                ? 'main'
+                : 'main main-bare'
+        }
+      >
+        {page}
+      </main>
     </div>
   );
 }

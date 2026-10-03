@@ -35,6 +35,7 @@ async function route(req: Request, env: Env): Promise<Response> {
 
   if (method === 'POST' && path === '/api/setup') return auth.setup(req, env);
   if (method === 'POST' && path === '/api/auth/login') return auth.login(req, env);
+  if (method === 'POST' && path === '/api/auth/register') return auth.register(req, env);
   // CSRF double-submit on every other mutating route, including logout.
   if (method === 'POST' || method === 'PATCH' || method === 'DELETE') requireCsrf(req);
   if (method === 'POST' && path === '/api/auth/logout') return auth.logout(req);
