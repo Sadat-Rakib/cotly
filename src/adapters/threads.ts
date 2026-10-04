@@ -189,10 +189,10 @@ export class ThreadsAdapter implements PlatformAdapter {
         params.set('media_type', 'IMAGE');
         params.set('image_url', await presignMediaGet(env, firstImage.r2Key));
       }
-      const container = await this.post(secrets, `/${uid}/threads_media`, params);
+      const container = await this.post(env, secrets, `/${uid}/threads_media`, params);
       const containerId = requireId(container, secrets, 'Threads');
       console.log('[threads-publish] container created', containerId.slice(0, 8) + '…', 'media_type:', params.get('media_type'));
-      const pub = await this.post(secrets, `/${uid}/threads_publish`, new URLSearchParams({ creation_id: containerId }));
+      const pub = await this.post(env, secrets, `/${uid}/threads_publish`, new URLSearchParams({ creation_id: containerId }));
       const publishedId = requireId(pub, secrets, 'Threads publish');
       console.log('[threads-publish] publish accepted, remote id', publishedId.slice(0, 8) + '…');
       // The container id doubles as the post id for text posts and is what
@@ -229,13 +229,28 @@ export class ThreadsAdapter implements PlatformAdapter {
     }
   }
 
-  private async post(secrets: Secrets, path: string, body: URLSearchParams): Promise<ProviderResponse> {
+  private async post(env: Env, secrets: Secrets, path: string, body: URLSearchParams): Promise<ProviderResponse> {
     const resp = await httpJson(`${GRAPH}${path}`, {
       method: 'POST',
       headers: { authorization: `Bearer ${secrets[0] ?? ''}` },
       body,
     });
     if (!resp.ok) {
+      // Decisive diagnostic: what did Meta actually grant this token?
+      const appToken = `${env.THREADS_CLIENT_ID ?? ''}|${env.THREADS_CLIENT_SECRET ?? ''}`;
+      const dbg = await httpJson(
+        `${GRAPH.replace('/v1.0', '')}/debug_token?input_token=${encodeURIComponent(secrets[0] ?? '')}&access_token=${encodeURIComponent(appToken)}`,
+      );
+      const d = (dbg.data as { data?: Record<string, unknown> } | null)?.data ?? {};
+      console.log('[threads-publish] debug_token', {
+        isValid: d.is_valid,
+        tokenType: d.type,
+        appIdSuffix: `…${String(d.app_id ?? '').slice(-4)}`,
+        userId: d.user_id,
+        scopes: d.scopes,
+        expiresAt: d.expires_at,
+        debugError: (dbg.data as { error?: unknown } | null)?.error,
+      });
       const err = (resp.data as { error?: { code?: number; message?: string; error_subcode?: number } } | null)?.error;
       console.log('[threads-publish] graph call failed', {
         httpStatus: resp.status,
