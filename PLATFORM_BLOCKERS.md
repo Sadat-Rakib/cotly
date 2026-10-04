@@ -89,12 +89,11 @@ legitimately connected that way. Every publish attempt records the route used.
   Free plan: 1 GB Postgres per project, 5 GB object storage, 100 projects.
   Needed values: `DATABASE_URL` (pooled connection string), Neon object
   storage credentials, `BETTER_AUTH_SECRET`.
-- Deferred with it, by design: multi-user ownership scoping. The current D1
-  schema has no `owner_id` on `social_accounts` and reads are unscoped; the
-  product is single-owner today. Registration exists behind
-  `ALLOW_REGISTRATION` (endpoint shipped, migration 0002 adds `users.name`)
-  but the flag stays OFF until ownership scoping lands with the Neon
-  migration. Enabling it before then would leak data between users.
+- RESOLVED 2026-10-04: ownership scoping shipped (migration 0003 adds
+  `social_accounts.owner_id` + `oauth_states.owner_id`, every API query is
+  owner-scoped, isolation unit tests + live production tests pass), and
+  public registration is enabled (`ALLOW_REGISTRATION=true`). The Neon data
+  migration itself (moving rows from D1 to Postgres) remains its own sprint.
 - D1 data will be exported, transformed, imported into Neon, verified, and
   kept as a rollback copy. No data will be dropped.
 
