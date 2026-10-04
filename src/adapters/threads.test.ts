@@ -115,7 +115,10 @@ describe('threads adapter', () => {
     ]);
     const cb = await new ThreadsAdapter().handleCallback(env, new URLSearchParams('code=abc'));
     expect(cb.tokens.accessToken).toBe(TOKEN);
-    expect(cb.tokens.expiresAt).toBeUndefined();
+    // A failed exchange must still mark the short-lived 1h expiry so the
+    // engine knows refresh/reconnect is required instead of silently sitting
+    // on a token that dies within the hour.
+    expect(cb.tokens.expiresAt).toBeGreaterThan(Math.floor(Date.now() / 1000) + 3500);
   });
 
   it('publishes text: container then publish, returns pending with container id', async () => {
