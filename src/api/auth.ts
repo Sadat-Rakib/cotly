@@ -78,7 +78,16 @@ export async function register(req: Request, env: Env): Promise<Response> {
   return withCookies(json({ ok: true }, 201), await sessionCookiePair(env, req, id));
 }
 
-export async function logout(req: Request): Promise<Response> {
+// Logout invalidates the session server-side: any cookie issued before this
+// moment stops working, not just the copy held by the current browser.
+export async function logout(req: Request, env: Env): Promise<Response> {
+  const userId = await getSessionUserId(env, req);
+  if (userId) {
+    await env.DB
+      .prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+      .bind(`session_cut_${userId}`, String(nowS()))
+      .run();
+  }
   const headers = new Headers({ 'content-type': 'application/json' });
   for (const c of clearedSessionCookies(new URL(req.url).protocol === 'https:')) headers.append('set-cookie', c);
   return new Response(JSON.stringify({ ok: true }), { status: 200, headers });

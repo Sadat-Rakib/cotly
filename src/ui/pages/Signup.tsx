@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { ApiError, api } from '../api';
-import { AuthShell, inputClass } from './Login';
+import { AuthShell, PasswordField, inputClass } from './Login';
 
 interface Props {
   onDone: () => void;
@@ -16,6 +16,7 @@ export function SignupPage({ onDone, onNav }: Props) {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (busy) return;
     setErr(null);
     setBusy(true);
     try {
@@ -34,11 +35,11 @@ export function SignupPage({ onDone, onNav }: Props) {
   return (
     <AuthShell>
       <h1 className="text-white text-2xl font-medium tracking-tight text-center mt-6">Create your Cotly account.</h1>
-      <p className="text-white/45 text-sm text-center mt-1.5">One place to write, schedule, and move on.</p>
+      <p className="text-white/50 text-sm text-center mt-1.5">One place to write, schedule, and move on.</p>
 
       <form onSubmit={submit} className="mt-8 flex flex-col gap-4">
         <label className="block">
-          <span className="text-xs text-white/50">Name</span>
+          <span className="text-xs text-white/60">Name</span>
           <input
             className={`${inputClass} mt-1.5`}
             type="text"
@@ -49,7 +50,7 @@ export function SignupPage({ onDone, onNav }: Props) {
           />
         </label>
         <label className="block">
-          <span className="text-xs text-white/50">Email</span>
+          <span className="text-xs text-white/60">Email</span>
           <input
             className={`${inputClass} mt-1.5`}
             type="email"
@@ -59,19 +60,10 @@ export function SignupPage({ onDone, onNav }: Props) {
             onChange={(e) => setEmail(e.target.value)}
           />
         </label>
-        <label className="block">
-          <span className="text-xs text-white/50">Password</span>
-          <input
-            className={`${inputClass} mt-1.5`}
-            type="password"
-            autoComplete="new-password"
-            required
-            minLength={8}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-          <span className="text-xs text-white/35 mt-1 block">At least 8 characters.</span>
-        </label>
+        <div className="mt-0">
+          <PasswordField value={password} onChange={setPassword} autoComplete="new-password" />
+          <span className="text-xs text-white/40 mt-1 block">At least 8 characters.</span>
+        </div>
 
         {err && (
           <p className="text-sm text-red-300" role="alert">
@@ -82,13 +74,13 @@ export function SignupPage({ onDone, onNav }: Props) {
         <button
           type="submit"
           disabled={busy}
-          className="mt-1 w-full rounded-lg bg-white text-black text-sm font-semibold py-2.5 hover:bg-white/90 disabled:opacity-60"
+          className="mt-1 w-full rounded-lg bg-white text-black text-sm font-semibold py-2.5 hover:bg-white/90 disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
         >
           {busy ? 'Creating account…' : 'Create account'}
         </button>
       </form>
 
-      <p className="text-sm text-white/45 text-center mt-6">
+      <p className="text-sm text-white/50 text-center mt-6">
         Existing user?{' '}
         <a
           href="/login"
@@ -96,7 +88,7 @@ export function SignupPage({ onDone, onNav }: Props) {
             e.preventDefault();
             onNav('/login');
           }}
-          className="text-white underline-offset-4 hover:underline"
+          className="text-white underline-offset-4 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60 rounded"
         >
           Sign in
         </a>

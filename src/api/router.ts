@@ -38,16 +38,16 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (method === 'POST' && path === '/api/auth/register') return auth.register(req, env);
   // CSRF double-submit on every other mutating route, including logout.
   if (method === 'POST' || method === 'PATCH' || method === 'DELETE') requireCsrf(req);
-  if (method === 'POST' && path === '/api/auth/logout') return auth.logout(req);
+  if (method === 'POST' && path === '/api/auth/logout') return auth.logout(req, env);
   if (method === 'GET' && path === '/api/me') return auth.me(req, env);
 
   const userId = await requireSession(env, req);
 
-  if (method === 'GET' && path === '/api/setup/status') return setup.getSetupStatus(env);
-  if (method === 'GET' && path === '/api/accounts') return accounts.listAccounts(env);
-  if (method === 'DELETE' && seg.length === 3 && seg[1] === 'accounts') return accounts.removeAccount(env, seg[2] as string);
+  if (method === 'GET' && path === '/api/setup/status') return setup.getSetupStatus(req, env);
+  if (method === 'GET' && path === '/api/accounts') return accounts.listAccounts(env, userId);
+  if (method === 'DELETE' && seg.length === 3 && seg[1] === 'accounts') return accounts.removeAccount(env, userId, seg[2] as string);
   if (method === 'POST' && seg.length === 4 && seg[1] === 'accounts' && seg[3] === 'test') {
-    return accounts.testAccount(env, seg[2] as string);
+    return accounts.testAccount(env, userId, seg[2] as string);
   }
   if (method === 'POST' && path === '/api/accounts/bluesky') return accounts.connectBluesky(req, env);
   if (method === 'POST' && path === '/api/accounts/mock') return accounts.connectMock(req, env);
@@ -59,33 +59,33 @@ async function route(req: Request, env: Env): Promise<Response> {
   }
 
   if (method === 'POST' && path === '/api/media/upload-url') return media.uploadUrl(req, env);
-  if (method === 'POST' && path === '/api/media/confirm') return media.confirm(req, env);
+  if (method === 'POST' && path === '/api/media/confirm') return media.confirm(req, env, userId);
   if (method === 'GET' && seg.length === 4 && seg[1] === 'media' && seg[3] === 'url') {
     return media.mediaUrl(env, seg[2] as string, userId);
   }
 
-  if (method === 'POST' && path === '/api/posts') return posts.create(req, env);
+  if (method === 'POST' && path === '/api/posts') return posts.create(req, env, userId);
   if (method === 'GET' && path === '/api/posts') return posts.list(req, env);
-  if (method === 'GET' && seg.length === 3 && seg[1] === 'posts') return posts.getOne(env, seg[2] as string);
-  if (method === 'PATCH' && seg.length === 3 && seg[1] === 'posts') return posts.patch(req, env, seg[2] as string);
-  if (method === 'DELETE' && seg.length === 3 && seg[1] === 'posts') return posts.remove(env, seg[2] as string);
+  if (method === 'GET' && seg.length === 3 && seg[1] === 'posts') return posts.getOne(env, userId, seg[2] as string);
+  if (method === 'PATCH' && seg.length === 3 && seg[1] === 'posts') return posts.patch(req, env, userId, seg[2] as string);
+  if (method === 'DELETE' && seg.length === 3 && seg[1] === 'posts') return posts.remove(env, userId, seg[2] as string);
   if (method === 'POST' && seg.length === 4 && seg[1] === 'posts') {
     const id = seg[2] as string;
     switch (seg[3]) {
       case 'reschedule':
-        return posts.reschedule(req, env, id);
+        return posts.reschedule(req, env, userId, id);
       case 'cancel':
-        return posts.cancel(env, id);
+        return posts.cancel(env, userId, id);
       case 'publish-now':
-        return posts.publishNow(env, id);
+        return posts.publishNow(env, userId, id);
       case 'duplicate':
-        return posts.duplicate(env, id);
+        return posts.duplicate(env, userId, id);
       default:
         throw new HttpError(404, 'Not found');
     }
   }
   if (method === 'POST' && seg.length === 4 && seg[1] === 'targets' && seg[3] === 'retry') {
-    return posts.retryTarget(env, seg[2] as string);
+    return posts.retryTarget(env, userId, seg[2] as string);
   }
 
   if (method === 'GET' && path === '/api/settings') return settings.getSettings(env);

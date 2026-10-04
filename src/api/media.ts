@@ -30,7 +30,7 @@ export async function uploadUrl(req: Request, env: Env): Promise<Response> {
   return json({ mediaId: `med_${randomId(8)}`, uploadUrl: signed.url, r2Key: key });
 }
 
-export async function confirm(req: Request, env: Env): Promise<Response> {
+export async function confirm(req: Request, env: Env, userId: string): Promise<Response> {
   const body = await readJson(req);
   const r2Key = String(body.r2Key ?? '');
   if (!r2Key.startsWith('media/') || r2Key.includes('..')) throw new HttpError(400, 'That upload reference is invalid.');
@@ -43,7 +43,7 @@ export async function confirm(req: Request, env: Env): Promise<Response> {
   const filename = sanitizeFilename(String(body.filename ?? ''));
   const r = await env.DB
     .prepare('INSERT INTO media (id, owner_id, mime, size, original_filename, r2_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .bind(id, 'owner', mime, size, filename, r2Key, nowS())
+    .bind(id, userId, mime, size, filename, r2Key, nowS())
     .run();
   if (!r.success) throw new HttpError(500, 'The upload could not be recorded. Try again.');
   return json({ ok: true });

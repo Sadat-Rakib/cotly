@@ -5,6 +5,7 @@ import { encryptSecret, randomId } from '../lib/crypto';
 import { handleApi } from './router';
 import schema from '../../migrations/0001_init.sql?raw';
 import schema0002 from '../../migrations/0002_user_name.sql?raw';
+import schema0003 from '../../migrations/0003_user_ownership.sql?raw';
 
 // NOTE: this pool runs with per-test isolated storage — writes inside a test are
 // rolled back when it ends, while writes in beforeAll persist for every test.
@@ -22,6 +23,8 @@ let csrf = '';
 let preSetupMe = { status: 0, isSetup: true };
 let mockAccId = '';
 let threadsAccId = '';
+let userBCookie = '';
+let userBCsrf = '';
 
 function cookiesOf(res: Response): Record<string, string> {
   const h = res.headers as unknown as { getSetCookie?: () => string[] };
@@ -41,11 +44,11 @@ function captureCookies(res: Response): void {
   if (c.cotly_csrf) csrf = c.cotly_csrf;
 }
 
-async function api(path: string, method: string, body?: unknown, opts: { auth?: boolean; csrf?: boolean } = {}): Promise<Response> {
+async function api(path: string, method: string, body?: unknown, opts: { auth?: boolean; csrf?: boolean; cookie?: string; asUser?: 'B'; csrfToken?: string } = {}): Promise<Response> {
   const headers: Record<string, string> = {};
   if (body !== undefined) headers['content-type'] = 'application/json';
-  if (opts.auth && cookieHeader) headers['cookie'] = cookieHeader;
-  if (opts.csrf) headers['x-csrf'] = csrf;
+  if (opts.auth && cookieHeader) headers['cookie'] = opts.cookie ?? cookieHeader;
+  if (opts.csrf) headers['x-csrf'] = opts.csrfToken ?? (opts.asUser === 'B' ? userBCsrf : csrf);
   const req = new Request(`${BASE}${path}`, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
   return handleApi(req, e, ctx);
 }
@@ -65,6 +68,9 @@ beforeAll(async () => {
     .filter(Boolean);
   for (const stmt of statements) await e.DB.prepare(stmt).run();
   await e.DB.prepare(schema0002.trim()).run();
+  for (const stmt of schema0003.split('\n').filter((l) => !l.trimStart().startsWith('--')).join('\n').split(';').map((s) => s.trim()).filter(Boolean)) {
+    await e.DB.prepare(stmt).run();
+  }
 
   const before = await api('/api/me', 'GET');
   preSetupMe = { status: before.status, isSetup: ((await before.json()) as { isSetup: boolean }).isSetup };
@@ -149,6 +155,74 @@ test('registration creates a user and starts a session when allowed', async () =
   const body = (await me.json()) as { email: string; isSetup: boolean };
   expect(body.email).toBe('new@test.dev');
   expect(body.isSetup).toBe(true);
+});
+
+test('multi-user isolation: a second user sees none of the owner data', async () => {
+  (env as unknown as Record<string, string | undefined>).ALLOW_REGISTRATION = 'true';
+  const reg = await api('/api/auth/register', 'POST', { name: 'User B', email: 'userb@test.dev', password: 'password123' });
+  expect(reg.status).toBe(201);
+  const c = cookiesOf(reg);
+  userBCookie = `cotly_session=${c.cotly_session}; cotly_csrf=${c.cotly_csrf ?? ""}`;
+  userBCsrf = c.cotly_csrf ?? '';
+  const b = { auth: true, cookie: userBCookie, asUser: 'B' as const };
+
+  // B sees no connected accounts
+  const bAccounts = await api('/api/accounts', 'GET', undefined, b);
+  expect(bAccounts.status).toBe(200);
+  expect(await bAccounts.json()).toEqual([]);
+
+  // Owner creates a post on the owner's mock account
+  const { postId, targetId } = await createNowPost('Owner secret post');
+
+  // B cannot read, edit, or delete the owner's post
+  expect((await api(`/api/posts/${postId}`, 'GET', undefined, b)).status).toBe(404);
+  expect((await api(`/api/posts/${postId}`, 'PATCH', { baseCaption: 'hacked' }, { ...b, csrf: true })).status).toBe(404);
+  expect((await api(`/api/posts/${postId}`, 'DELETE', undefined, { ...b, csrf: true })).status).toBe(404);
+
+  // B cannot retry the owner's queue target or disconnect the owner's account
+  expect((await api(`/api/targets/${targetId}/retry`, 'POST', undefined, { ...b, csrf: true })).status).toBe(404);
+  expect((await api(`/api/accounts/${threadsAccId}/test`, 'POST', undefined, { ...b, csrf: true })).status).toBe(404);
+  expect((await api(`/api/accounts/${threadsAccId}`, 'DELETE', undefined, { ...b, csrf: true })).status).toBe(404);
+
+  // B's queue is empty
+  const bPosts = await api('/api/posts', 'GET', undefined, b);
+  expect(await bPosts.json()).toEqual([]);
+
+  // Owner still sees their own post
+  const ownerList = await api('/api/posts', 'GET', undefined, { auth: true });
+  const ownerPosts = (await ownerList.json()) as Array<{ id: string }>;
+  expect(ownerPosts.some((p) => p.id === postId)).toBe(true);
+});
+
+test('media upload and its URL are scoped to the uploading user', async () => {
+  // Owner confirms a media row, then user B must get a plain 404 for its URL.
+  (env as unknown as Record<string, string | undefined>).ALLOW_REGISTRATION = 'true';
+  const mediaId = `med_${randomId(8)}`;
+  await e.DB
+    .prepare(`INSERT INTO media (id, owner_id, mime, size, original_filename, r2_key, created_at) VALUES (?, 'owner', 'image/png', 10, 'own.png', 'media/own/iso.png', ?)`)
+    .bind(mediaId, nowS())
+    .run();
+  const b = { auth: true, cookie: userBCookie, asUser: 'B' as const };
+  expect((await api(`/api/media/${mediaId}/url`, 'GET', undefined, b)).status).toBe(404);
+  // Owner passes the ownership gate and reaches the storage check (no R2 creds in this env -> 503, not 404).
+  expect((await api(`/api/media/${mediaId}/url`, 'GET', undefined, { auth: true })).status).toBe(503);
+});
+
+test('logout invalidates the session server-side', async () => {
+  (env as unknown as Record<string, string | undefined>).ALLOW_REGISTRATION = 'true';
+  const reg = await api('/api/auth/register', 'POST', { name: 'Logout User', email: 'logout@test.dev', password: 'password123' });
+  expect(reg.status).toBe(201);
+  const c = cookiesOf(reg);
+  const jar = `cotly_session=${c.cotly_session}; cotly_csrf=${c.cotly_csrf ?? ''}`;
+  expect((await api('/api/me', 'GET', undefined, { auth: true, cookie: jar })).status).toBe(200);
+  const out = await api('/api/auth/logout', 'POST', undefined, { auth: true, cookie: jar, csrf: true, csrfToken: c.cotly_csrf ?? '' });
+  expect(out.status).toBe(200);
+  // The same signed cookie is now dead: it was issued before the logout cut.
+  const meAfter = await api('/api/me', 'GET', undefined, { auth: true, cookie: jar });
+  expect(meAfter.status).toBe(401);
+  // And the user can sign back in for a fresh, working session.
+  const login = await api('/api/auth/login', 'POST', { email: 'logout@test.dev', password: 'password123' });
+  expect(login.status).toBe(200);
 });
 
 test('mutating route without x-csrf is 403', async () => {

@@ -1,5 +1,6 @@
 import type { Env } from '../contracts/env';
 import { json } from '../lib/http';
+import { requireSession } from '../lib/sessions';
 import { deploymentStatus } from './_shared';
 
 export interface ProviderStatusView {
@@ -37,14 +38,16 @@ interface ProviderAccountStats {
   connected: number;
 }
 
-export async function getSetupStatus(env: Env): Promise<Response> {
+export async function getSetupStatus(req: Request, env: Env): Promise<Response> {
   const deployment = await deploymentStatus(env);
+  const userId = await requireSession(env, req);
 
   const owner = await env.DB.prepare('SELECT email FROM users LIMIT 1').first<{ email: string }>();
   const ownerExists = Boolean(owner);
 
   const accountRows = await env.DB
-    .prepare('SELECT id, provider, display_name, status, last_verified_at FROM social_accounts ORDER BY created_at, id')
+    .prepare('SELECT id, provider, display_name, status, last_verified_at FROM social_accounts WHERE owner_id = ? ORDER BY created_at, id')
+    .bind(userId)
     .all<{ id: string; provider: string; display_name: string; status: string; last_verified_at: number | null }>();
   const accounts = (accountRows.results ?? []).map((r) => ({
     id: r.id,
@@ -55,7 +58,8 @@ export async function getSetupStatus(env: Env): Promise<Response> {
   }));
 
   const statRows = await env.DB
-    .prepare(`SELECT provider, COUNT(*) AS total, SUM(CASE WHEN status = 'connected' THEN 1 ELSE 0 END) AS connected FROM social_accounts GROUP BY provider`)
+    .prepare(`SELECT provider, COUNT(*) AS total, SUM(CASE WHEN status = 'connected' THEN 1 ELSE 0 END) AS connected FROM social_accounts WHERE owner_id = ? GROUP BY provider`)
+    .bind(userId)
     .all<ProviderAccountStats>();
   const stats = new Map<string, ProviderAccountStats>();
   for (const r of statRows.results ?? []) stats.set(r.provider, r);

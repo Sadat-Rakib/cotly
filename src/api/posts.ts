@@ -3,6 +3,7 @@ import type { Provider } from '../contracts/types';
 import { CAPABILITIES } from '../contracts/capabilities';
 import { randomId } from '../lib/crypto';
 import { HttpError, json, readJson } from '../lib/http';
+import { requireSession } from '../lib/sessions';
 import { isValidTimezone, nowS, PROVIDER_LABEL } from './_shared';
 
 interface FieldError {
@@ -29,6 +30,7 @@ const isStr = (v: unknown): v is string => typeof v === 'string';
 // Shared by create and patch: validates per-target provider capabilities.
 async function validateComposition(
   env: Env,
+  userId: string,
   baseCaption: string,
   mediaIds: string[],
   targets: TargetInput[],
@@ -51,8 +53,8 @@ async function validateComposition(
   const media = new Map<string, { id: string; mime: string }>();
   if (mediaIdsClean.length > 0) {
     const rows = await env.DB
-      .prepare(`SELECT id, mime FROM media WHERE id IN (${mediaIdsClean.map(() => '?').join(',')})`)
-      .bind(...mediaIdsClean)
+      .prepare(`SELECT id, mime FROM media WHERE owner_id = ? AND id IN (${mediaIdsClean.map(() => '?').join(',')})`)
+      .bind(userId, ...mediaIdsClean)
       .all<{ id: string; mime: string }>();
     for (const r of rows.results ?? []) media.set(r.id, r);
     if (media.size !== mediaIdsClean.length) {
@@ -65,8 +67,8 @@ async function validateComposition(
   const accounts = new Map<string, AccountRow>();
   if (accountIds.length > 0) {
     const rows = await env.DB
-      .prepare(`SELECT id, provider, display_name, status FROM social_accounts WHERE id IN (${accountIds.map(() => '?').join(',')})`)
-      .bind(...accountIds)
+      .prepare(`SELECT id, provider, display_name, status FROM social_accounts WHERE owner_id = ? AND id IN (${accountIds.map(() => '?').join(',')})`)
+      .bind(userId, ...accountIds)
       .all<AccountRow>();
     for (const r of rows.results ?? []) accounts.set(r.id, r);
   }
@@ -122,13 +124,13 @@ function parseTargets(raw: unknown): TargetInput[] {
     }));
 }
 
-export async function create(req: Request, env: Env): Promise<Response> {
+export async function create(req: Request, env: Env, userId: string): Promise<Response> {
   const body = await readJson(req);
   const baseCaption = isStr(body.baseCaption) ? body.baseCaption : '';
   const mediaIds = Array.isArray(body.mediaIds) ? (body.mediaIds.filter(isStr) as string[]) : [];
   const targets = parseTargets(body.targets);
   const errors: FieldError[] = [];
-  const { errors: compErrors, accounts, media } = await validateComposition(env, baseCaption, mediaIds, targets);
+  const { errors: compErrors, accounts, media } = await validateComposition(env, userId, baseCaption, mediaIds, targets);
   errors.push(...compErrors);
 
   const mode = body.mode;
@@ -158,9 +160,9 @@ export async function create(req: Request, env: Env): Promise<Response> {
   await env.DB
     .prepare(
       `INSERT INTO posts (id, owner_id, base_caption, status, scheduled_at, timezone, publish_mode, media_count, created_at, updated_at)
-       VALUES (?, 'owner', ?, 'scheduled', ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, 'scheduled', ?, ?, ?, ?, ?, ?)`,
     )
-    .bind(postId, baseCaption, scheduledAt, timezone, mode === 'now' ? 'now' : 'scheduled', media.length, now, now)
+    .bind(postId, userId, baseCaption, scheduledAt, timezone, mode === 'now' ? 'now' : 'scheduled', media.length, now, now)
     .run();
   for (const [i, m] of media.entries()) {
     await env.DB.prepare('INSERT INTO post_media (post_id, media_id, position) VALUES (?,?,?)').bind(postId, m.id, i).run();
@@ -258,8 +260,8 @@ async function shape(env: Env, posts: Array<Record<string, unknown>>): Promise<V
   }));
 }
 
-async function postRows(env: Env, id: string): Promise<Array<Record<string, unknown>>> {
-  const row = await env.DB.prepare('SELECT * FROM posts WHERE id = ?').bind(id).first<Record<string, unknown>>();
+async function postRows(env: Env, userId: string, id: string): Promise<Array<Record<string, unknown>>> {
+  const row = await env.DB.prepare('SELECT * FROM posts WHERE id = ? AND owner_id = ?').bind(id, userId).first<Record<string, unknown>>();
   return row ? [row] : [];
 }
 
@@ -271,8 +273,9 @@ export async function list(req: Request, env: Env): Promise<Response> {
   const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 50, 1), 200);
   const from = Number(url.searchParams.get('from')) || 0;
   const to = Number(url.searchParams.get('to')) || 0;
-  let sql = `SELECT * FROM posts WHERE EXISTS (SELECT 1 FROM post_targets t WHERE t.post_id = posts.id AND t.status IN (${statuses.map(() => '?').join(',')}))`;
-  const binds: unknown[] = [...statuses];
+  const userId = await requireSession(env, req);
+  let sql = `SELECT * FROM posts WHERE owner_id = ? AND EXISTS (SELECT 1 FROM post_targets t WHERE t.post_id = posts.id AND t.status IN (${statuses.map(() => '?').join(',')}))`;
+  const binds: unknown[] = [userId, ...statuses];
   if (from) {
     sql += ' AND scheduled_at >= ?';
     binds.push(from);
@@ -287,20 +290,20 @@ export async function list(req: Request, env: Env): Promise<Response> {
   return json(await shape(env, rows.results ?? []));
 }
 
-export async function getOne(env: Env, id: string): Promise<Response> {
-  const rows = await shape(env, await postRows(env, id));
+export async function getOne(env: Env, userId: string, id: string): Promise<Response> {
+  const rows = await shape(env, await postRows(env, userId, id));
   if (rows.length === 0) throw new HttpError(404, 'That post no longer exists.');
   return json(rows[0]);
 }
 
-async function rawPost(env: Env, id: string): Promise<Record<string, unknown>> {
-  const row = await env.DB.prepare('SELECT * FROM posts WHERE id = ?').bind(id).first<Record<string, unknown>>();
+async function rawPost(env: Env, userId: string, id: string): Promise<Record<string, unknown>> {
+  const row = await env.DB.prepare('SELECT * FROM posts WHERE id = ? AND owner_id = ?').bind(id, userId).first<Record<string, unknown>>();
   if (!row) throw new HttpError(404, 'That post no longer exists.');
   return row;
 }
 
-export async function patch(req: Request, env: Env, id: string): Promise<Response> {
-  const post = await rawPost(env, id);
+export async function patch(req: Request, env: Env, userId: string, id: string): Promise<Response> {
+  const post = await rawPost(env, userId, id);
   if (!EDITABLE.includes(String(post.status))) {
     throw new HttpError(409, 'This post is already publishing or finished and can no longer be edited.');
   }
@@ -330,7 +333,7 @@ export async function patch(req: Request, env: Env, id: string): Promise<Respons
     }));
   }
 
-  const { errors, accounts, media } = await validateComposition(env, baseCaption, mediaIds, targets);
+  const { errors, accounts, media } = await validateComposition(env, userId, baseCaption, mediaIds, targets);
   if (errors.length > 0) return json({ errors }, 422);
 
   const now = nowS();
@@ -362,8 +365,8 @@ export async function patch(req: Request, env: Env, id: string): Promise<Respons
   return json({ ok: true });
 }
 
-export async function reschedule(req: Request, env: Env, id: string): Promise<Response> {
-  const post = await rawPost(env, id);
+export async function reschedule(req: Request, env: Env, userId: string, id: string): Promise<Response> {
+  const post = await rawPost(env, userId, id);
   if (!EDITABLE.includes(String(post.status))) {
     throw new HttpError(409, 'This post is already publishing or finished and can no longer be rescheduled.');
   }
@@ -385,8 +388,8 @@ export async function reschedule(req: Request, env: Env, id: string): Promise<Re
   return json({ ok: true });
 }
 
-export async function cancel(env: Env, id: string): Promise<Response> {
-  await rawPost(env, id);
+export async function cancel(env: Env, userId: string, id: string): Promise<Response> {
+  await rawPost(env, userId, id);
   const now = nowS();
   const r = await env.DB
     .prepare(`UPDATE post_targets SET status = 'cancelled', updated_at = ? WHERE post_id = ? AND status IN ('draft','scheduled','claimed','publishing','retrying')`)
@@ -397,8 +400,8 @@ export async function cancel(env: Env, id: string): Promise<Response> {
   return json({ ok: true });
 }
 
-export async function publishNow(env: Env, id: string): Promise<Response> {
-  const post = await rawPost(env, id);
+export async function publishNow(env: Env, userId: string, id: string): Promise<Response> {
+  const post = await rawPost(env, userId, id);
   if (String(post.status) === 'published') throw new HttpError(409, 'This post was already published.');
   const now = nowS();
   await env.DB.prepare(`UPDATE posts SET scheduled_at = ?, status = 'scheduled', publish_mode = 'now', updated_at = ? WHERE id = ?`).bind(now, now, id).run();
@@ -412,23 +415,23 @@ export async function publishNow(env: Env, id: string): Promise<Response> {
   return json({ ok: true });
 }
 
-export async function duplicate(env: Env, id: string): Promise<Response> {
-  const post = await rawPost(env, id);
+export async function duplicate(env: Env, userId: string, id: string): Promise<Response> {
+  const post = await rawPost(env, userId, id);
   const now = nowS();
   const newId = `post_${randomId(8)}`;
   await env.DB
     .prepare(
       `INSERT INTO posts (id, owner_id, base_caption, status, timezone, publish_mode, media_count, created_at, updated_at)
-       VALUES (?, 'owner', ?, 'draft', ?, 'scheduled', ?, ?, ?)`,
+       VALUES (?, ?, ?, 'draft', ?, 'scheduled', ?, ?, ?)`,
     )
-    .bind(newId, String(post.base_caption ?? ''), String(post.timezone ?? 'UTC'), Number(post.media_count ?? 0), now, now)
+    .bind(newId, userId, String(post.base_caption ?? ''), String(post.timezone ?? 'UTC'), Number(post.media_count ?? 0), now, now)
     .run();
   await env.DB.prepare(`INSERT INTO post_media (post_id, media_id, position) SELECT ?, media_id, position FROM post_media WHERE post_id = ?`).bind(newId, id).run();
   return json({ postId: newId }, 201);
 }
 
-export async function remove(env: Env, id: string): Promise<Response> {
-  const post = await rawPost(env, id);
+export async function remove(env: Env, userId: string, id: string): Promise<Response> {
+  const post = await rawPost(env, userId, id);
   if (!['draft', 'cancelled'].includes(String(post.status))) {
     throw new HttpError(409, 'Only draft or cancelled posts can be deleted.');
   }
@@ -439,8 +442,11 @@ export async function remove(env: Env, id: string): Promise<Response> {
   return json({ ok: true });
 }
 
-export async function retryTarget(env: Env, targetId: string): Promise<Response> {
-  const t = await env.DB.prepare('SELECT id, post_id, status FROM post_targets WHERE id = ?').bind(targetId).first<{ id: string; post_id: string; status: string }>();
+export async function retryTarget(env: Env, userId: string, targetId: string): Promise<Response> {
+  const t = await env.DB
+    .prepare('SELECT t.id AS id, t.post_id AS post_id, t.status AS status FROM post_targets t JOIN posts p ON p.id = t.post_id WHERE t.id = ? AND p.owner_id = ?')
+    .bind(targetId, userId)
+    .first<{ id: string; post_id: string; status: string }>();
   if (!t) throw new HttpError(404, 'That queue item no longer exists.');
   if (!['failed', 'needs_reconnect'].includes(t.status)) {
     throw new HttpError(409, 'Only failed or disconnected items can be retried.');

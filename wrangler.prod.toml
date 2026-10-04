@@ -24,7 +24,9 @@ crons = ["* * * * *"]
 
 [vars]
 APP_URL = "https://cotly.cotly-app.workers.dev"
-ALLOW_REGISTRATION = "false"
+# Public registration is ON. Every query is owner-scoped (migration 0003) and
+# covered by multi-user isolation tests before this was enabled.
+ALLOW_REGISTRATION = "true"
 MOCK_SOCIAL_ENABLED = "true"
 MEDIA_RETENTION_HOURS = "48"
 # X is pay-per-post; publishing is enabled but hard-capped per month.

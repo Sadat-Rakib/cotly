@@ -5,6 +5,7 @@ import { encryptSecret } from '../lib/crypto';
 import { BlueskyAdapter } from '../adapters/bluesky';
 import { handleApi } from './router';
 import schema from '../../migrations/0001_init.sql?raw';
+import schema0003 from '../../migrations/0003_user_ownership.sql?raw';
 
 // Same conventions as api.test.ts: per-test isolated storage rolls back writes
 // made inside a test, while beforeAll writes persist for the whole file. Every
@@ -87,6 +88,14 @@ beforeAll(async () => {
     .map((s) => s.trim())
     .filter(Boolean);
   for (const stmt of statements) await e.DB.prepare(stmt).run();
+  const stmts3 = schema0003
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('--'))
+    .join('\n')
+    .split(';')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  for (const stmt of stmts3) await e.DB.prepare(stmt).run();
 
   const setup = await api('/api/setup', 'POST', { email: 'owner@test.dev', password: 'password123', timezone: 'Europe/Berlin' });
   expect(setup.status).toBe(201);

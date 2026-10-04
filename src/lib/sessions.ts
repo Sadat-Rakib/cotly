@@ -54,7 +54,21 @@ export async function sessionCookiePair(env: Env, req: Request, userId: string):
 export async function getSessionUserId(env: Env, req: Request): Promise<string | null> {
   const token = parseCookies(req)[SESSION_COOKIE];
   if (!token) return null;
-  return verifySession(env.SESSION_SECRET, token);
+  const userId = await verifySession(env.SESSION_SECRET, token);
+  if (!userId) return null;
+  // Server-side logout: signSession puts exp = iat + SESSION_TTL in the token,
+  // so the issue time is derivable. A session issued before the user's last
+  // logout is dead even though the signed cookie itself is still well-formed.
+  const row = await env.DB
+    .prepare('SELECT value FROM settings WHERE key = ?')
+    .bind(`session_cut_${userId}`)
+    .first<{ value: string }>();
+  if (!row) return userId;
+  const cut = Number(row.value);
+  if (!Number.isFinite(cut)) return userId;
+  const exp = Number(token.split('.')[1]);
+  if (exp - SESSION_TTL <= cut) return null;
+  return userId;
 }
 
 export async function requireSession(env: Env, req: Request): Promise<string> {

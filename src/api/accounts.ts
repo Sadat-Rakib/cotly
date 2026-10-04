@@ -2,7 +2,7 @@ import type { Env } from '../contracts/env';
 import type { AccountTokens, PlatformAdapter, Provider, SocialAccountRecord } from '../contracts/types';
 import { decryptSecret, encryptSecret, randomId } from '../lib/crypto';
 import { HttpError, json, readJson } from '../lib/http';
-import { parseCookies } from '../lib/sessions';
+import { parseCookies, requireSession } from '../lib/sessions';
 import { nowS, PROVIDER_LABEL } from './_shared';
 import { getAdapter } from '../adapters/registry';
 
@@ -26,16 +26,17 @@ const viewOf = (r: { id: string; provider: string; external_id: string; display_
   lastVerifiedAt: r.last_verified_at,
 });
 
-// Never select token columns here.
-export async function listAccounts(env: Env): Promise<Response> {
+// Never select token columns here. Scoped to the authenticated owner.
+export async function listAccounts(env: Env, userId: string): Promise<Response> {
   const rows = await env.DB
-    .prepare('SELECT id, provider, external_id, display_name, avatar_url, status, last_verified_at FROM social_accounts ORDER BY created_at, id')
+    .prepare('SELECT id, provider, external_id, display_name, avatar_url, status, last_verified_at FROM social_accounts WHERE owner_id = ? ORDER BY created_at, id')
+    .bind(userId)
     .all<{ id: string; provider: string; external_id: string; display_name: string; avatar_url: string | null; status: string; last_verified_at: number | null }>();
   return json((rows.results ?? []).map(viewOf));
 }
 
-export async function removeAccount(env: Env, id: string): Promise<Response> {
-  const r = await env.DB.prepare('DELETE FROM social_accounts WHERE id = ?').bind(id).run();
+export async function removeAccount(env: Env, userId: string, id: string): Promise<Response> {
+  const r = await env.DB.prepare('DELETE FROM social_accounts WHERE id = ? AND owner_id = ?').bind(id, userId).run();
   if (!r.meta.changes) throw new HttpError(404, 'That account was already removed.');
   return json({ ok: true });
 }
@@ -83,13 +84,13 @@ async function toRecord(env: Env, row: AccountRow): Promise<SocialAccountRecord>
 // 200 with {ok:false} means the probe ran and failed; 400 means the provider
 // cannot be probed at all yet. Detail text comes from adapters (human-readable,
 // token-free by contract); an adapter crash is caught and humanized here.
-export async function testAccount(env: Env, id: string): Promise<Response> {
+export async function testAccount(env: Env, userId: string, id: string): Promise<Response> {
   const row = await env.DB
     .prepare(
       `SELECT id, provider, external_id, display_name, avatar_url, access_token_enc, refresh_token_enc, token_expires_at, scopes, meta, status, last_verified_at
-       FROM social_accounts WHERE id = ?`,
+       FROM social_accounts WHERE id = ? AND owner_id = ?`,
     )
-    .bind(id)
+    .bind(id, userId)
     .first<AccountRow>();
   if (!row) throw new HttpError(404, 'That account does not exist.');
   const label = PROVIDER_LABEL[row.provider as Provider] ?? row.provider;
@@ -114,6 +115,7 @@ export async function testAccount(env: Env, id: string): Promise<Response> {
 
 async function upsertAccount(
   env: Env,
+  userId: string,
   provider: Provider,
   account: { externalId: string; displayName: string; avatarUrl?: string; meta?: Record<string, unknown> },
   tokens: AccountTokens,
@@ -124,9 +126,9 @@ async function upsertAccount(
   const refreshTokenEnc = tokens.refreshToken ? await encryptSecret(env.ENCRYPTION_SECRET, tokens.refreshToken) : null;
   await env.DB
     .prepare(
-      `INSERT INTO social_accounts (id, provider, external_id, display_name, avatar_url, access_token_enc, refresh_token_enc, token_expires_at, scopes, meta, status, last_verified_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'connected', ?, ?, ?)
-       ON CONFLICT(provider, external_id) DO UPDATE SET
+      `INSERT INTO social_accounts (id, owner_id, provider, external_id, display_name, avatar_url, access_token_enc, refresh_token_enc, token_expires_at, scopes, meta, status, last_verified_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'connected', ?, ?, ?, ?)
+       ON CONFLICT(owner_id, provider, external_id) DO UPDATE SET
          display_name = excluded.display_name,
          avatar_url = excluded.avatar_url,
          access_token_enc = excluded.access_token_enc,
@@ -140,6 +142,7 @@ async function upsertAccount(
     )
     .bind(
       `acc_${randomId(8)}`,
+      userId,
       provider,
       account.externalId,
       account.displayName,
@@ -155,8 +158,8 @@ async function upsertAccount(
     )
     .run();
   const row = await env.DB
-    .prepare('SELECT id, provider, external_id, display_name, avatar_url, status, last_verified_at FROM social_accounts WHERE provider = ? AND external_id = ?')
-    .bind(provider, account.externalId)
+    .prepare('SELECT id, provider, external_id, display_name, avatar_url, status, last_verified_at FROM social_accounts WHERE owner_id = ? AND provider = ? AND external_id = ?')
+    .bind(userId, provider, account.externalId)
     .first<{ id: string; provider: string; external_id: string; display_name: string; avatar_url: string | null; status: string; last_verified_at: number | null }>();
   if (!row) throw new HttpError(500, 'The account was connected but could not be saved. Try again.');
   return viewOf(row);
@@ -178,12 +181,14 @@ export async function connectBluesky(req: Request, env: Env): Promise<Response> 
     // Adapter messages are human-readable and secret-free by contract.
     throw new HttpError(400, err instanceof Error && err.message ? err.message : 'Connecting Bluesky failed. Try again.');
   }
-  const saved = await upsertAccount(env, 'bluesky', result.account, result.tokens, result.scopes);
+  const userId = await requireSession(env, req);
+  const saved = await upsertAccount(env, userId, 'bluesky', result.account, result.tokens, result.scopes);
   return json(saved, 201);
 }
 
 export async function connectMock(req: Request, env: Env): Promise<Response> {
   if (env.MOCK_SOCIAL_ENABLED !== 'true') throw new HttpError(404, 'Mock accounts are not enabled on this server.');
+  const userId = await requireSession(env, req);
   const body = await readJson(req);
   const displayName = String(body.displayName ?? '').trim() || 'MockSocial';
   const now = nowS();
@@ -192,10 +197,10 @@ export async function connectMock(req: Request, env: Env): Promise<Response> {
   const accessTokenEnc = await encryptSecret(env.ENCRYPTION_SECRET, `mock-token-${randomId(12)}`);
   await env.DB
     .prepare(
-      `INSERT INTO social_accounts (id, provider, external_id, display_name, access_token_enc, status, meta, last_verified_at, created_at, updated_at)
-       VALUES (?, 'mock', ?, ?, ?, 'connected', '{}', ?, ?, ?)`,
+      `INSERT INTO social_accounts (id, owner_id, provider, external_id, display_name, access_token_enc, status, meta, last_verified_at, created_at, updated_at)
+       VALUES (?, ?, 'mock', ?, ?, ?, 'connected', '{}', ?, ?, ?)`,
     )
-    .bind(id, externalId, displayName, accessTokenEnc, now, now, now)
+    .bind(id, userId, externalId, displayName, accessTokenEnc, now, now, now)
     .run();
   return json(
     { id, provider: 'mock', displayName, avatarUrl: null, status: 'connected', externalId, lastVerifiedAt: now },
@@ -204,6 +209,7 @@ export async function connectMock(req: Request, env: Env): Promise<Response> {
 }
 
 export async function oauthStart(req: Request, env: Env, provider: string): Promise<Response> {
+  const userId = await requireSession(env, req);
   const label = PROVIDER_LABEL[provider as Provider] ?? provider;
   let adapter: PlatformAdapter;
   try {
@@ -223,8 +229,8 @@ export async function oauthStart(req: Request, env: Env, provider: string): Prom
   }
   const now = nowS();
   await env.DB
-    .prepare('INSERT INTO oauth_states (state, provider, verifier, redirect_uri, created_at, expires_at) VALUES (?,?,?,?,?,?)')
-    .bind(state, provider, auth.verifier ?? null, redirectUri, now, now + 600)
+    .prepare('INSERT INTO oauth_states (state, provider, verifier, redirect_uri, created_at, expires_at, owner_id) VALUES (?,?,?,?,?,?,?)')
+    .bind(state, provider, auth.verifier ?? null, redirectUri, now, now + 600, userId)
     .run();
   return json({ url: auth.url });
 }
@@ -240,24 +246,28 @@ export async function oauthCallback(req: Request, env: Env, provider: string): P
   try {
     const state = params.get('state') ?? '';
     const row = state
-      ? await env.DB.prepare('SELECT * FROM oauth_states WHERE state = ?').bind(state).first<{ provider: string; verifier: string | null; expires_at: number }>()
+      ? await env.DB.prepare('SELECT * FROM oauth_states WHERE state = ?').bind(state).first<{ provider: string; verifier: string | null; expires_at: number; owner_id: string | null }>()
       : null;
     if (row) await env.DB.prepare('DELETE FROM oauth_states WHERE state = ?').bind(state).run();
     if (!row || row.provider !== provider || row.expires_at <= nowS()) {
       return fail('This connection attempt expired or was already used. Start again from the Accounts page.');
+    }
+    const ownerId = row.owner_id;
+    if (!ownerId) {
+      return fail('This connection attempt predates multi-user sign-in. Start again from the Accounts page.');
     }
     const adapter = getAdapter(provider as Provider);
     if (!adapter.handleCallback) return fail(`${PROVIDER_LABEL[provider as Provider] ?? provider} does not support OAuth sign-in.`);
     const result = await adapter.handleCallback(env, params, row.verifier ?? undefined);
     // More than one Page to choose from — park the user token and ask which Page.
     if (result.pageChoice) {
-      const blob = await encryptSecret(env.ENCRYPTION_SECRET, JSON.stringify({ u: result.pageChoice.userToken, p: result.pageChoice.pages }));
+      const blob = await encryptSecret(env.ENCRYPTION_SECRET, JSON.stringify({ u: result.pageChoice.userToken, p: result.pageChoice.pages, o: ownerId }));
       return redirect(`choose_page=${encodeURIComponent(provider)}`, {
         'set-cookie': `${PAGE_PICK_COOKIE}=${blob}; Path=/; Max-Age=900; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`,
       });
     }
     if (!result.account || !result.tokens) return fail('The provider did not return an account to connect.');
-    await upsertAccount(env, provider as Provider, result.account, result.tokens, result.scopes);
+    await upsertAccount(env, ownerId, provider as Provider, result.account, result.tokens, result.scopes);
     return redirect(`connected=1&provider=${encodeURIComponent(provider)}`);
   } catch (err) {
     return fail(err instanceof Error && err.message ? err.message : 'Connecting this account failed. Try again.');
@@ -268,17 +278,20 @@ export async function oauthCallback(req: Request, env: Env, provider: string): P
 // The OAuth user token lives only in this encrypted, httpOnly, 15-minute cookie
 // until the user picks a Page. Nothing is written to D1 before that choice.
 const PAGE_PICK_COOKIE = 'cotly_fb_pages';
-async function pagePickUserToken(req: Request, env: Env): Promise<string> {
+async function pagePickUserToken(req: Request, env: Env): Promise<{ userToken: string; ownerId: string }> {
   const blob = parseCookies(req)[PAGE_PICK_COOKIE];
   if (!blob) throw new HttpError(400, 'That Facebook connection attempt has expired. Connect Facebook again to choose a Page.');
   let userToken: string;
+  let ownerId: string;
   try {
-    userToken = String((JSON.parse(await decryptSecret(env.ENCRYPTION_SECRET, blob)) as { u?: unknown }).u ?? '');
+    const parsed = JSON.parse(await decryptSecret(env.ENCRYPTION_SECRET, blob)) as { u?: unknown; o?: unknown };
+    userToken = String(parsed.u ?? '');
+    ownerId = String(parsed.o ?? '');
   } catch {
     throw new HttpError(400, 'That Facebook connection attempt has expired. Connect Facebook again to choose a Page.');
   }
-  if (!userToken) throw new HttpError(400, 'That Facebook connection attempt has expired. Connect Facebook again to choose a Page.');
-  return userToken;
+  if (!userToken || !ownerId) throw new HttpError(400, 'That Facebook connection attempt has expired. Connect Facebook again to choose a Page.');
+  return { userToken, ownerId };
 }
 
 // GET /api/accounts/facebook/pages — Page names/ids only, never a token.
@@ -286,7 +299,7 @@ export async function listFacebookPages(req: Request, env: Env): Promise<Respons
   const adapter = getAdapter('facebook');
   if (!adapter.listPages) throw new HttpError(400, 'Choosing a Page is not available for Facebook yet.');
   try {
-    return json({ pages: await adapter.listPages(env, await pagePickUserToken(req, env)) });
+    return json({ pages: await adapter.listPages(env, (await pagePickUserToken(req, env)).userToken) });
   } catch (err) {
     throw new HttpError(400, err instanceof Error && err.message ? err.message : 'Could not read your Facebook Pages.');
   }
@@ -300,12 +313,13 @@ export async function selectFacebookPage(req: Request, env: Env): Promise<Respon
   const adapter = getAdapter('facebook');
   if (!adapter.pickPage) throw new HttpError(400, 'Choosing a Page is not available for Facebook yet.');
   let picked: Awaited<ReturnType<NonNullable<PlatformAdapter['pickPage']>>>;
+  const pick = await pagePickUserToken(req, env);
   try {
-    picked = await adapter.pickPage(env, await pagePickUserToken(req, env), pageId);
+    picked = await adapter.pickPage(env, pick.userToken, pageId);
   } catch (err) {
     throw new HttpError(400, err instanceof Error && err.message ? err.message : 'Could not connect that Page.');
   }
-  const saved = await upsertAccount(env, 'facebook', picked.account, picked.tokens, picked.scopes);
+  const saved = await upsertAccount(env, pick.ownerId, 'facebook', picked.account, picked.tokens, picked.scopes);
   const secure = new URL(req.url).protocol === 'https:';
   return json(saved, 201, {
     'set-cookie': `${PAGE_PICK_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`,
