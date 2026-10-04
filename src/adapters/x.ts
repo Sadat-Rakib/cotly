@@ -24,7 +24,7 @@ const AUTH = 'https://x.com/i/oauth2/authorize';
 const TOKEN = 'https://api.x.com/2/oauth2/token';
 const API = 'https://api.x.com/2';
 const UPLOAD = 'https://upload.twitter.com/1.1/media/upload.json';
-export const SCOPE = 'tweet.read tweet.write users.read offline.access';
+export const SCOPE = 'tweet.read tweet.write users.read media.write offline.access';
 
 // Conservative per-post estimate in USD (text create ~0.015; media upload ~0.010).
 const EST_POST_USD = 0.015;

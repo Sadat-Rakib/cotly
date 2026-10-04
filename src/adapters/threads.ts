@@ -69,6 +69,9 @@ export class ThreadsAdapter implements PlatformAdapter {
     let accessToken = String((tok.data as { access_token: string }).access_token);
     let expiresAt: number | undefined;
     // Exchange the short-lived token (1h) for a long-lived one (60 days).
+    // A silent failure here stores a token that dies within the hour, so the
+    // outcome is always logged (safe fields only) and short tokens are marked
+    // with their true expiry so the engine knows refresh is required.
     const ll = await httpJson(
       `${GRAPH.replace('/v1.0', '')}/long_lived_access_token?grant_type=threads_exchange&client_secret=${encodeURIComponent(env.THREADS_CLIENT_SECRET ?? '')}&access_token=${encodeURIComponent(accessToken)}`,
     );
@@ -76,6 +79,16 @@ export class ThreadsAdapter implements PlatformAdapter {
       accessToken = String((ll.data as { access_token: string }).access_token);
       const expiresIn = (ll.data as { expires_in?: unknown }).expires_in;
       if (typeof expiresIn === 'number') expiresAt = Math.floor(Date.now() / 1000) + expiresIn;
+      console.log('[threads-oauth] long-lived exchange ok, expires in', expiresIn ?? 'unknown');
+    } else {
+      const err = (ll.data as { error?: { code?: number; message?: string } } | null)?.error;
+      console.log('[threads-oauth] long-lived exchange FAILED', {
+        httpStatus: ll.status,
+        metaErrorCode: err?.code ?? null,
+        metaErrorMessage: redact(String(err?.message ?? ''), secrets),
+        clientIdSuffix: `…${(env.THREADS_CLIENT_ID ?? '').slice(-4)}`,
+      });
+      expiresAt = Math.floor(Date.now() / 1000) + 3600;
     }
     // Official Threads profile fields only — /me on graph.threads.net, never
     // graph.facebook.com. An unknown field name here fails the whole call.
@@ -176,7 +189,12 @@ export class ThreadsAdapter implements PlatformAdapter {
       }
       const container = await this.post(secrets, `/${uid}/threads_media`, params);
       const containerId = requireId(container, secrets, 'Threads');
+      console.log('[threads-publish] container created', containerId.slice(0, 8) + '…', 'media_type:', params.get('media_type'));
       const pub = await this.post(secrets, `/${uid}/threads_publish`, new URLSearchParams({ creation_id: containerId }));
+      const publishedId = requireId(pub, secrets, 'Threads publish');
+      console.log('[threads-publish] publish accepted, remote id', publishedId.slice(0, 8) + '…');
+      // The container id doubles as the post id for text posts and is what
+      // resolvePending polls until FINISHED.
       return { kind: 'pending', externalId: containerId, ...(pub.raw ? { raw: pub.raw } : {}) };
     } catch (e) {
       return outcomeFromError(e);
