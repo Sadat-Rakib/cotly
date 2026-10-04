@@ -82,20 +82,21 @@ describe('threads adapter', () => {
     const calls = stubFetch([
       () => jsonRes(200, { access_token: 'short_token' }),
       () => jsonRes(200, { access_token: TOKEN, expires_in: 5184000 }),
-      () => jsonRes(200, { id: 'th-user-1', username: 'tester', threads_profile_image_url: 'https://img/t.png' }),
+      () => jsonRes(200, { id: 'th-user-1', username: 'tester', name: 'Test Er', threads_profile_picture_url: 'https://img/t.png', threads_biography: 'hi' }),
     ]);
     const cb = await adapter.handleCallback(env, new URLSearchParams('code=abc'));
     expect(cb.account).toEqual({
       externalId: 'th-user-1',
-      displayName: 'tester',
+      displayName: 'Test Er',
       avatarUrl: 'https://img/t.png',
+      meta: { handle: 'tester', biography: 'hi' },
     });
     expect(cb.tokens.accessToken).toBe(TOKEN);
     expect(cb.tokens.expiresAt).toBeGreaterThan(Math.floor(Date.now() / 1000));
     expect(calls[0]?.url).toContain('graph.threads.net/oauth/access_token');
     expect(calls[1]?.url).toContain('graph.threads.net/long_lived_access_token');
     expect(calls[1]?.url).toContain('grant_type=threads_exchange');
-    expect(calls[2]?.url).toContain('graph.threads.net/v1.0/me?fields=id,username,threads_profile_image_url');
+    expect(calls[2]?.url).toContain('graph.threads.net/v1.0/me?fields=id,username,name,threads_profile_picture_url,threads_biography');
   });
 
   it('refreshes a long-lived token via threads_refresh', async () => {

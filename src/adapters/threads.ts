@@ -10,6 +10,7 @@ import {
   oauthError,
   outcomeFromError,
   presignMediaGet,
+  redact,
   requireId,
   type ProviderResponse,
   type Secrets,
@@ -76,20 +77,47 @@ export class ThreadsAdapter implements PlatformAdapter {
       const expiresIn = (ll.data as { expires_in?: unknown }).expires_in;
       if (typeof expiresIn === 'number') expiresAt = Math.floor(Date.now() / 1000) + expiresIn;
     }
-    const me = await httpJson(`${GRAPH}/me?fields=id,username,threads_profile_image_url`, {
+    // Official Threads profile fields only — /me on graph.threads.net, never
+    // graph.facebook.com. An unknown field name here fails the whole call.
+    const fields = 'id,username,name,threads_profile_picture_url,threads_biography';
+    const me = await httpJson(`${GRAPH}/me?fields=${fields}`, {
       headers: { authorization: `Bearer ${accessToken}` },
     });
     if (!me.ok) {
-      throw new Error('Cotly could not read your Threads profile. Confirm the app has threads_basic and try again.');
+      // Safe diagnostics only: status, Meta error code/message, scopes, URL,
+      // client id suffix. Never the token or secret.
+      const err = (me.data as { error?: { code?: number; message?: string; type?: string } } | null)?.error;
+      console.log('[threads-oauth] /me failed', {
+        httpStatus: me.status,
+        metaErrorCode: err?.code ?? null,
+        metaErrorType: err?.type ?? null,
+        metaErrorMessage: redact(String(err?.message ?? ''), secrets),
+        requestedScopes: SCOPE,
+        apiUrl: `${GRAPH}/me?fields=${fields}`,
+        clientIdSuffix: `…${(env.THREADS_CLIENT_ID ?? '').slice(-4)}`,
+      });
+      const codePart = typeof err?.code === 'number' ? ` (Meta code ${err.code})` : '';
+      const msgPart = redact(String(err?.message ?? 'Threads did not answer the profile request.'), secrets);
+      throw new Error(`Cotly could not read your Threads profile${codePart}: ${msgPart}`);
     }
-    const data = me.data as { id?: string; username?: string; threads_profile_image_url?: string } | null;
+    const data = me.data as {
+      id?: string;
+      username?: string;
+      name?: string;
+      threads_profile_picture_url?: string;
+      threads_biography?: string;
+    } | null;
     if (!data?.id) throw new Error('Threads did not return a profile id. Try connecting again.');
     console.log('[threads-oauth] connected user', data.id.slice(0, 6) + '…', 'with long-lived token:', Boolean(expiresAt));
     return {
       account: {
         externalId: data.id,
-        displayName: data.username || 'Threads user',
-        ...(data.threads_profile_image_url ? { avatarUrl: data.threads_profile_image_url } : {}),
+        displayName: (data.name || data.username || 'Threads user').trim(),
+        ...(data.threads_profile_picture_url ? { avatarUrl: data.threads_profile_picture_url } : {}),
+        meta: {
+          handle: data.username ?? '',
+          ...(data.threads_biography ? { biography: data.threads_biography } : {}),
+        },
       },
       tokens: { accessToken, ...(expiresAt ? { expiresAt } : {}) },
       scopes: SCOPE,
