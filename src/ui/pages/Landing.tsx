@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, useReducedMotion, useScroll, useTransform } from 'framer-motion';
-import { Check, Flower2 } from 'lucide-react';
+import { Check } from 'lucide-react';
+import { Logo, LogoMark } from '../components/Logo';
 import { PLATFORM_REGISTRY, STATE_LABEL, type PlatformState } from '../../contracts/platforms';
 
 interface Props {
@@ -129,9 +130,8 @@ export function Landing({ navigate, authed }: Props) {
         }`}
       >
         <div className="max-w-[1440px] mx-auto px-6 md:px-10 lg:px-28 flex items-center justify-between h-16 md:py-5 md:h-auto">
-          <a href="/" onClick={goto('/')} className="flex items-center gap-2 no-underline text-white">
-            <Flower2 className="w-6 h-6 text-white/90" />
-            <span className="text-xl font-semibold tracking-tight">cotly</span>
+          <a href="/" onClick={goto('/')} className="no-underline text-white">
+            <Logo markClass="w-6 h-6" wordClass="text-xl font-semibold tracking-tight" />
           </a>
 
           <nav className="hidden md:flex items-center gap-8">
@@ -462,10 +462,15 @@ export function Landing({ navigate, authed }: Props) {
       <footer className="border-t border-white/[0.06] py-10 px-6">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-white/40">
           <div className="flex items-center gap-2 text-white/60">
-            <Flower2 className="w-4 h-4" />
+            <LogoMark className="w-4 h-4" />
             <span className="font-semibold tracking-tight">cotly</span>
           </div>
           <p>© 2026 Cotly. An independent scheduler. Not affiliated with the platforms listed.</p>
+          <nav className="flex items-center gap-5">
+            <a href="/terms" onClick={goto('/terms')} className="no-underline text-white/40 hover:text-white transition-colors">Terms</a>
+            <a href="/services" onClick={goto('/services')} className="no-underline text-white/40 hover:text-white transition-colors">Services</a>
+            <a href="/privacy" onClick={goto('/privacy')} className="no-underline text-white/40 hover:text-white transition-colors">Privacy</a>
+          </nav>
         </div>
       </footer>
     </div>

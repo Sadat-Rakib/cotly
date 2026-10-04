@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { ApiError, api } from '../api';
-import { Flower2 } from 'lucide-react';
+import { Logo } from '../components/Logo';
 
 interface Props {
   onDone: () => void;
@@ -12,9 +12,8 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-[100dvh] bg-black flex items-center justify-center px-6 py-16">
       <div className="w-full max-w-[420px] rounded-2xl border border-[hsl(0_0%_20%)] bg-[hsl(0_0%_5%)] p-8">
-        <div className="flex items-center justify-center gap-2 text-white">
-          <Flower2 className="w-5 h-5 text-white/90" />
-          <span className="text-lg font-semibold tracking-tight">cotly</span>
+        <div className="flex items-center justify-center text-white">
+          <Logo markClass="w-5 h-5" wordClass="text-lg font-semibold tracking-tight" />
         </div>
         {children}
       </div>

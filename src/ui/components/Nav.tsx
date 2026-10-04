@@ -1,4 +1,5 @@
 import { useCallback, useEffect } from 'react';
+import { LogoMark } from './Logo';
 
 const ITEMS = [
   { path: '/app/compose', label: 'Compose' },
@@ -30,7 +31,9 @@ export function Nav({ path, email, onNavigate, onLogout }: Props) {
   return (
     <nav className="nav">
       <div className="nav-inner">
-        <span className="brand" onClick={() => onNavigate('/app/compose')}>Cotly</span>
+        <span className="brand" onClick={() => onNavigate('/app/compose')}>
+          <LogoMark className="w-4 h-4" /> Cotly
+        </span>
         <div className="nav-links">
           {ITEMS.map((i) => (
             <button

@@ -12,10 +12,15 @@ import { SettingsPage } from './pages/Settings';
 import { SetupCenterPage } from './pages/SetupCenter';
 import { SetupPage } from './pages/Setup';
 import { SignupPage } from './pages/Signup';
+import { TermsPage } from './pages/Terms';
+import { ServicesPage } from './pages/Services';
+import { PrivacyPage } from './pages/Privacy';
 
 const APP_ROUTES = new Set([
   '/app/compose', '/app/queue', '/app/calendar', '/app/accounts', '/app/settings', '/app/diagnostics', '/app/setup',
 ]);
+
+const PUBLIC_ROUTES = new Set(['/', '/login', '/signup', '/terms', '/services', '/privacy', '/setup']);
 
 // Pre-v0.2 links (e.g. OAuth callbacks redirecting to /accounts?connected=1)
 // land on their /app equivalents, query string preserved.
@@ -58,11 +63,12 @@ export default function App() {
     return () => { alive = false; };
   }, []);
 
-  // Route guards. '/' is the public landing page and is never redirected.
+  // Route guards. Public routes (landing, legal pages, auth, first-run setup)
+  // are never redirected away.
   useEffect(() => {
     if (me === undefined) return;
     if (me === null) {
-      if (path !== '/' && path !== '/login' && path !== '/signup' && path !== '/setup') navigate('/login');
+      if (!PUBLIC_ROUTES.has(path)) navigate('/login');
       return;
     }
     if (!me.isSetup) {
@@ -72,7 +78,7 @@ export default function App() {
     const query = window.location.search;
     if (path === '/login' || path === '/signup' || path === '/setup' || path === '/app') navigate('/app/compose');
     else if (LEGACY_ALIASES[path]) navigate(`${LEGACY_ALIASES[path]}${query}`);
-    else if (path !== '/' && !APP_ROUTES.has(path)) navigate('/');
+    else if (!PUBLIC_ROUTES.has(path) && !APP_ROUTES.has(path)) navigate('/');
   }, [me, path, navigate]);
 
   const logout = useCallback(async () => {
@@ -97,17 +103,23 @@ export default function App() {
   // States the guard is about to redirect away from render as loading, never
   // as their (unauthorized) page.
   const waiting = me === null
-    ? path !== '/' && path !== '/login' && path !== '/signup' && path !== '/setup'
+    ? !PUBLIC_ROUTES.has(path)
     : !me.isSetup
       ? path !== '/setup'
       : path === '/login' || path === '/signup' || path === '/setup' || path === '/app'
-        || (!knownAppRoute && path !== '/' && !LEGACY_ALIASES[path]);
+        || (!PUBLIC_ROUTES.has(path) && !knownAppRoute && !LEGACY_ALIASES[path]);
 
   if (waiting) return LOADING;
 
   let page: ReactElement;
   if (path === '/') {
     page = <Landing navigate={navigate} authed={authed} />;
+  } else if (path === '/terms') {
+    page = <TermsPage />;
+  } else if (path === '/services') {
+    page = <ServicesPage />;
+  } else if (path === '/privacy') {
+    page = <PrivacyPage />;
   } else if (path === '/login') {
     page = <LoginPage onDone={() => { refreshMe(); navigate('/app/compose'); }} onNav={navigate} />;
   } else if (path === '/signup' && !authed) {
@@ -131,10 +143,10 @@ export default function App() {
 
   return (
     <div className="app">
-      {authed && path !== '/' && <Nav path={path} email={me.email} onNavigate={navigate} onLogout={logout} />}
+      {authed && !PUBLIC_ROUTES.has(path) && <Nav path={path} email={me.email} onNavigate={navigate} onLogout={logout} />}
       <main
         className={
-          path === '/'
+          path === '/' || path === '/terms' || path === '/services' || path === '/privacy'
             ? 'main main-landing'
             : path === '/login' || path === '/signup'
               ? 'main main-auth'

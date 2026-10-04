@@ -7,3 +7,5 @@ dist/
 .owner-credentials.txt
 .wrangler-dev.log
 .tail.log
+.neon
+.env.local
