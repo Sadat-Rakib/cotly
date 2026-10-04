@@ -237,20 +237,24 @@ export class ThreadsAdapter implements PlatformAdapter {
     });
     if (!resp.ok) {
       // Decisive diagnostic: what did Meta actually grant this token?
-      const appToken = `${env.THREADS_CLIENT_ID ?? ''}|${env.THREADS_CLIENT_SECRET ?? ''}`;
-      const dbg = await httpJson(
-        `${GRAPH.replace('/v1.0', '')}/debug_token?input_token=${encodeURIComponent(secrets[0] ?? '')}&access_token=${encodeURIComponent(appToken)}`,
-      );
-      const d = (dbg.data as { data?: Record<string, unknown> } | null)?.data ?? {};
-      console.log('[threads-publish] debug_token', {
-        isValid: d.is_valid,
-        tokenType: d.type,
-        appIdSuffix: `…${String(d.app_id ?? '').slice(-4)}`,
-        userId: d.user_id,
-        scopes: d.scopes,
-        expiresAt: d.expires_at,
-        debugError: (dbg.data as { error?: unknown } | null)?.error,
-      });
+      try {
+        const appToken = `${env.THREADS_CLIENT_ID ?? ''}|${env.THREADS_CLIENT_SECRET ?? ''}`;
+        const dbg = await httpJson(
+          `${GRAPH.replace('/v1.0', '')}/debug_token?input_token=${encodeURIComponent(secrets[0] ?? '')}&access_token=${encodeURIComponent(appToken)}`,
+        );
+        const d = (dbg.data as { data?: Record<string, unknown> } | null)?.data ?? {};
+        console.log('[threads-publish] debug_token', {
+          isValid: d.is_valid,
+          tokenType: d.type,
+          appIdSuffix: `…${String(d.app_id ?? '').slice(-4)}`,
+          userId: d.user_id,
+          scopes: d.scopes,
+          expiresAt: d.expires_at,
+          debugError: (dbg.data as { error?: unknown } | null)?.error,
+        });
+      } catch (dbgErr) {
+        console.log('[threads-publish] debug_token unavailable:', redact(String(dbgErr), secrets).slice(0, 160));
+      }
       const err = (resp.data as { error?: { code?: number; message?: string; error_subcode?: number } } | null)?.error;
       console.log('[threads-publish] graph call failed', {
         httpStatus: resp.status,
