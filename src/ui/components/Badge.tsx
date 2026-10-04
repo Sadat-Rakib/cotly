@@ -7,5 +7,8 @@ const LABELS: Partial<Record<AnyStatus, string>> = {
 };
 
 export function StatusBadge({ status }: { status: AnyStatus }) {
-  return <span className={`badge badge-${status}`}>{LABELS[status] ?? status}</span>;
+  // Unknown/corrupt status strings degrade to the reconnect state instead of
+  // rendering raw values in the UI.
+  const label = LABELS[status] ?? (status === 'connected' || status === 'draft' || status === 'scheduled' || status === 'published' ? status : 'needs reconnect');
+  return <span className={`badge badge-${status}`}>{label}</span>;
 }

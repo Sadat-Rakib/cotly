@@ -93,6 +93,7 @@ export interface Account {
   id: string;
   provider: Provider;
   displayName: string;
+  handle?: string | null;
   avatarUrl?: string;
   status: AccountStatus;
   externalId?: string;

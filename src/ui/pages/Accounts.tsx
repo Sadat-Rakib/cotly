@@ -169,7 +169,7 @@ export function AccountsPage() {
   // POST /api/accounts/:id/test -> {ok, detail}. Detail is human-readable and
   // never contains tokens.
   const testConnection = async (a: Account) => {
-    const label = `${providerLabel(a.provider)} · ${a.displayName}`;
+    const label = `${providerLabel(a.provider)} · ${a.displayName}${a.handle ? ` (@${a.handle})` : ''}`;
     setBusy(a.provider);
     try {
       const r = await api<{ ok: boolean; detail: string }>(`/api/accounts/${a.id}/test`, { method: 'POST' });

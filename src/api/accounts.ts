@@ -11,16 +11,29 @@ interface AccountView {
   id: string;
   provider: string;
   displayName: string;
+  handle: string | null;
   avatarUrl: string | null;
   status: string;
   externalId: string;
   lastVerifiedAt: number | null;
 }
 
-const viewOf = (r: { id: string; provider: string; external_id: string; display_name: string; avatar_url: string | null; status: string; last_verified_at: number | null }): AccountView => ({
+// Normalize on read: the handle lives in the meta JSON and is never returned
+// as raw JSON text.
+function handleOf(metaRaw: string): string | null {
+  try {
+    const handle = (JSON.parse(metaRaw) as { handle?: unknown }).handle;
+    return typeof handle === 'string' && handle.trim() ? handle.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+const viewOf = (r: { id: string; provider: string; external_id: string; display_name: string; avatar_url: string | null; status: string; last_verified_at: number | null; meta?: string }): AccountView => ({
   id: r.id,
   provider: r.provider,
   displayName: r.display_name,
+  handle: r.meta !== undefined ? handleOf(r.meta) : null,
   avatarUrl: r.avatar_url,
   status: r.status,
   externalId: r.external_id,
@@ -30,7 +43,7 @@ const viewOf = (r: { id: string; provider: string; external_id: string; display_
 // Never select token columns here. Scoped to the authenticated owner.
 export async function listAccounts(env: Env, userId: string): Promise<Response> {
   const rows = await env.DB
-    .prepare('SELECT id, provider, external_id, display_name, avatar_url, status, last_verified_at FROM social_accounts WHERE owner_id = ? ORDER BY created_at, id')
+    .prepare('SELECT id, provider, external_id, display_name, avatar_url, status, last_verified_at, meta FROM social_accounts WHERE owner_id = ? ORDER BY created_at, id')
     .bind(userId)
     .all<{ id: string; provider: string; external_id: string; display_name: string; avatar_url: string | null; status: string; last_verified_at: number | null }>();
   return json((rows.results ?? []).map(viewOf));
@@ -128,7 +141,7 @@ async function upsertAccount(
   await env.DB
     .prepare(
       `INSERT INTO social_accounts (id, owner_id, provider, external_id, display_name, avatar_url, access_token_enc, refresh_token_enc, token_expires_at, scopes, meta, status, last_verified_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'connected', ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'connected', ?, ?, ?)
        ON CONFLICT(owner_id, provider, external_id) DO UPDATE SET
          display_name = excluded.display_name,
          avatar_url = excluded.avatar_url,
@@ -159,7 +172,7 @@ async function upsertAccount(
     )
     .run();
   const row = await env.DB
-    .prepare('SELECT id, provider, external_id, display_name, avatar_url, status, last_verified_at FROM social_accounts WHERE owner_id = ? AND provider = ? AND external_id = ?')
+    .prepare('SELECT id, provider, external_id, display_name, avatar_url, status, last_verified_at, meta FROM social_accounts WHERE owner_id = ? AND provider = ? AND external_id = ?')
     .bind(userId, provider, account.externalId)
     .first<{ id: string; provider: string; external_id: string; display_name: string; avatar_url: string | null; status: string; last_verified_at: number | null }>();
   if (!row) throw new HttpError(500, 'The account was connected but could not be saved. Try again.');

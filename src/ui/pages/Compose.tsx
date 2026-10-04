@@ -297,7 +297,10 @@ export function ComposePage({ me, navigate }: Props) {
                         disabled={blocked}
                         onChange={(e) => setSelection((prev) => ({ ...prev, [a.id]: e.target.checked }))}
                       />
-                      <span className="dest-name">{a.displayName}</span>
+                      <span className="dest-name">
+                        {a.displayName}
+                        {a.handle ? <span className="dest-handle">@{a.handle}</span> : null}
+                      </span>
                       <StatusBadge status={a.status} />
                     </label>
                   );
