@@ -32,6 +32,12 @@ export class ThreadsAdapter implements PlatformAdapter {
     if (!env.THREADS_CLIENT_ID) {
       throw new Error('Threads OAuth is not configured. Set THREADS_CLIENT_ID and THREADS_CLIENT_SECRET first.');
     }
+    // Secret-free diagnostics: client id suffix, exact redirect, requested scopes.
+    console.log('[threads-oauth] start', {
+      clientIdSuffix: `…${(env.THREADS_CLIENT_ID ?? '').slice(-4)}`,
+      redirectUri,
+      scopes: SCOPE,
+    });
     const u = new URL(DIALOG);
     u.searchParams.set('client_id', env.THREADS_CLIENT_ID);
     u.searchParams.set('redirect_uri', redirectUri);
@@ -78,6 +84,7 @@ export class ThreadsAdapter implements PlatformAdapter {
     }
     const data = me.data as { id?: string; username?: string; threads_profile_image_url?: string } | null;
     if (!data?.id) throw new Error('Threads did not return a profile id. Try connecting again.');
+    console.log('[threads-oauth] connected user', data.id.slice(0, 6) + '…', 'with long-lived token:', Boolean(expiresAt));
     return {
       account: {
         externalId: data.id,

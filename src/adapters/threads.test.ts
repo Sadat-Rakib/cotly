@@ -60,6 +60,18 @@ const media = (over: Partial<MediaRecord> = {}): MediaRecord => ({
 afterEach(() => vi.unstubAllGlobals());
 
 describe('threads adapter', () => {
+  it('verifies a Meta signed_request and rejects a tampered one', async () => {
+    const { parseSignedRequest } = await import('./_shared');
+    const SECRET = 'threads-app-secret-very-secret';
+    const payload = Buffer.from(JSON.stringify({ algorithm: 'HMAC-SHA256', user_id: 'th-987' })).toString('base64url');
+    const { createHmac } = await import('node:crypto');
+    const sig = createHmac('sha256', SECRET).update(payload).digest('base64url');
+    expect(await parseSignedRequest(`${sig}.${payload}`, SECRET)).toBe('th-987');
+    const bad = createHmac('sha256', 'wrong-secret').update(payload).digest('base64url');
+    expect(await parseSignedRequest(`${bad}.${payload}`, SECRET)).toBeNull();
+    expect(await parseSignedRequest(`${sig.slice(0, -2)}x.${payload}`, SECRET)).toBeNull();
+  });
+
   it('builds the OAuth URL and completes the callback', async () => {
     const adapter = new ThreadsAdapter();
     const { url } = await adapter.buildAuthUrl(env, 'http://localhost:8787/oauth/threads/callback', 'st9');

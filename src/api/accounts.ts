@@ -5,6 +5,7 @@ import { HttpError, json, readJson } from '../lib/http';
 import { parseCookies, requireSession } from '../lib/sessions';
 import { nowS, PROVIDER_LABEL } from './_shared';
 import { getAdapter } from '../adapters/registry';
+import { parseSignedRequest } from '../adapters/_shared';
 
 interface AccountView {
   id: string;
@@ -292,6 +293,24 @@ async function pagePickUserToken(req: Request, env: Env): Promise<{ userToken: s
   }
   if (!userToken || !ownerId) throw new HttpError(400, 'That Facebook connection attempt has expired. Connect Facebook again to choose a Page.');
   return { userToken, ownerId };
+}
+
+// POST /oauth/threads/deauthorize — Meta calls this when a user removes the
+// Cotly app from their Threads settings. The signed_request is verified with
+// the Threads app secret; the matching Threads connection (its encrypted
+// tokens) is deleted immediately.
+export async function threadsDeauthorize(req: Request, env: Env): Promise<Response> {
+  const form = await req.formData();
+  const signed = String(form.get('signed_request') ?? '');
+  if (!signed) throw new HttpError(400, 'Missing signed_request payload.');
+  const threadsUserId = await parseSignedRequest(signed, env.THREADS_CLIENT_SECRET ?? '');
+  if (!threadsUserId) throw new HttpError(403, 'The deauthorization request could not be verified.');
+  const r = await env.DB
+    .prepare("DELETE FROM social_accounts WHERE provider = 'threads' AND external_id = ?")
+    .bind(threadsUserId)
+    .run();
+  console.log('[threads-deauthorize] verified user', threadsUserId.slice(0, 6) + '…', '— removed', r.meta.changes, 'connection(s)');
+  return json({ url: `${env.APP_URL}/data-deletion`, success: true });
 }
 
 // GET /api/accounts/facebook/pages — Page names/ids only, never a token.

@@ -28,6 +28,9 @@ async function route(req: Request, env: Env): Promise<Response> {
     if (method === 'GET' && seg.length === 3 && seg[1] !== undefined && seg[2] === 'callback') {
       return accounts.oauthCallback(req, env, seg[1]);
     }
+    if (method === 'POST' && seg.length === 3 && seg[1] === 'threads' && seg[2] === 'deauthorize') {
+      return accounts.threadsDeauthorize(req, env);
+    }
     throw new HttpError(404, 'Not found');
   }
 

@@ -132,6 +132,36 @@ export function graphError(resp: ProviderResponse, secrets: Secrets, platformNam
 }
 
 // OAuth error redirect (provider sent ?error= instead of ?code=).
+// Meta signed_request (deauthorize/data-deletion callbacks):
+// base64url(HMAC-SHA256(payload, app_secret)) + '.' + base64url(payload JSON).
+// Returns payload.user_id when the signature verifies, else null.
+export async function parseSignedRequest(signed: string, secret: string): Promise<string | null> {
+  const dot = signed.indexOf('.');
+  if (dot <= 0) return null;
+  const sigB64 = signed.slice(0, dot);
+  const payloadB64 = signed.slice(dot + 1);
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payloadB64));
+  let expected = '';
+  for (const b of new Uint8Array(mac)) expected += String.fromCharCode(b);
+  const sig = atob(sigB64.replace(/-/g, '+').replace(/_/g, '/'));
+  if (sig.length !== expected.length) return null;
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ sig.charCodeAt(i);
+  if (diff !== 0) return null;
+  let json = '';
+  for (const b of atob(payloadB64.replace(/-/g, '+').replace(/_/g, '/'))) json += String.fromCharCode(b.charCodeAt(0));
+  const bytes = Uint8Array.from(json, (c) => c.charCodeAt(0));
+  let data: { algorithm?: unknown; user_id?: unknown };
+  try {
+    data = JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    return null;
+  }
+  if (data.algorithm !== 'HMAC-SHA256' || typeof data.user_id !== 'string' || !data.user_id) return null;
+  return data.user_id;
+}
+
 export function oauthError(params: URLSearchParams, platformName: string): void {
   const err = params.get('error');
   if (err) {
