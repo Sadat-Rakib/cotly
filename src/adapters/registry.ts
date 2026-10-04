@@ -4,6 +4,7 @@ import { MockSocialAdapter } from '../engine/providers/mock';
 import { AssistedAdapter } from './assisted';
 import { BlueskyAdapter } from './bluesky';
 import { FacebookAdapter } from './facebook';
+import { InstagramAdapter } from './instagram';
 import { LinkedInAdapter } from './linkedin';
 import { ThreadsAdapter } from './threads';
 import { XAdapter } from './x';
@@ -11,6 +12,7 @@ import { XAdapter } from './x';
 const registry: Partial<Record<Provider, PlatformAdapter>> = {};
 for (const adapter of [
   new FacebookAdapter(),
+  new InstagramAdapter(),
   new ThreadsAdapter(),
   new LinkedInAdapter(),
   new BlueskyAdapter(),
@@ -33,7 +35,7 @@ export function registerAdapter(adapter: PlatformAdapter): void {
 
 export function oauthConfigured(
   provider: Provider,
-  env: { META_CLIENT_ID?: string; THREADS_CLIENT_ID?: string; LINKEDIN_CLIENT_ID?: string; X_CLIENT_ID?: string },
+  env: { META_CLIENT_ID?: string; THREADS_CLIENT_ID?: string; LINKEDIN_CLIENT_ID?: string; X_CLIENT_ID?: string; INSTAGRAM_CLIENT_ID?: string },
 ): boolean {
   switch (provider) {
     case 'facebook':
@@ -44,6 +46,8 @@ export function oauthConfigured(
       return Boolean(env.LINKEDIN_CLIENT_ID);
     case 'x':
       return Boolean(env.X_CLIENT_ID);
+    case 'instagram':
+      return Boolean(env.INSTAGRAM_CLIENT_ID);
     default:
       return false;
   }

@@ -6,6 +6,7 @@ import {
   graphError,
   graphTestConnection,
   httpJson,
+  needsReconnect,
   oauthError,
   outcomeFromError,
   presignMediaGet,
@@ -58,7 +59,17 @@ export class ThreadsAdapter implements PlatformAdapter {
     if (!tok.ok || typeof (tok.data as { access_token?: unknown } | null)?.access_token !== 'string') {
       throw new Error('Threads rejected the connection attempt. Verify the app credentials and try again.');
     }
-    const accessToken = String((tok.data as { access_token: string }).access_token);
+    let accessToken = String((tok.data as { access_token: string }).access_token);
+    let expiresAt: number | undefined;
+    // Exchange the short-lived token (1h) for a long-lived one (60 days).
+    const ll = await httpJson(
+      `${GRAPH.replace('/v1.0', '')}/long_lived_access_token?grant_type=threads_exchange&client_secret=${encodeURIComponent(env.THREADS_CLIENT_SECRET ?? '')}&access_token=${encodeURIComponent(accessToken)}`,
+    );
+    if (ll.ok && typeof (ll.data as { access_token?: unknown } | null)?.access_token === 'string') {
+      accessToken = String((ll.data as { access_token: string }).access_token);
+      const expiresIn = (ll.data as { expires_in?: unknown }).expires_in;
+      if (typeof expiresIn === 'number') expiresAt = Math.floor(Date.now() / 1000) + expiresIn;
+    }
     const me = await httpJson(`${GRAPH}/me?fields=id,username,threads_profile_image_url`, {
       headers: { authorization: `Bearer ${accessToken}` },
     });
@@ -73,9 +84,24 @@ export class ThreadsAdapter implements PlatformAdapter {
         displayName: data.username || 'Threads user',
         ...(data.threads_profile_image_url ? { avatarUrl: data.threads_profile_image_url } : {}),
       },
-      tokens: { accessToken },
+      tokens: { accessToken, ...(expiresAt ? { expiresAt } : {}) },
       scopes: SCOPE,
     };
+  }
+
+  // Long-lived Threads tokens renew via threads_refresh (valid only after the
+  // token is at least 24h old and not within 24h of expiry); the engine calls
+  // this automatically when the stored expiry passes.
+  async refresh(env: Env, tokens: { accessToken: string }): Promise<{ accessToken: string; expiresAt?: number }> {
+    const resp = await httpJson(
+      `${GRAPH.replace('/v1.0', '')}/refresh_access_token?grant_type=threads_refresh&access_token=${encodeURIComponent(tokens.accessToken)}`,
+    );
+    const data = (resp.data ?? {}) as { access_token?: unknown; expires_in?: unknown };
+    if (!resp.ok || typeof data.access_token !== 'string') {
+      throw needsReconnect(secretsOf(env, tokens.accessToken), 'Your Threads authorization expired. Reconnect Threads.');
+    }
+    const expiresAt = typeof data.expires_in === 'number' ? Math.floor(Date.now() / 1000) + data.expires_in : undefined;
+    return { accessToken: data.access_token, ...(expiresAt ? { expiresAt } : {}) };
   }
 
   async testConnection(env: Env, account: SocialAccountRecord): Promise<TestConnectionResult> {

@@ -110,7 +110,7 @@ export function requireId(resp: ProviderResponse, secrets: Secrets, platformName
 }
 
 // Meta Graph error mapping (Facebook + Threads share the error shape).
-export function graphError(resp: ProviderResponse, secrets: Secrets, platformName: 'Facebook' | 'Threads'): OutcomeError {
+export function graphError(resp: ProviderResponse, secrets: Secrets, platformName: 'Facebook' | 'Threads' | 'Instagram'): OutcomeError {
   const gerr = (resp.data as { error?: Record<string, unknown> } | null)?.error ?? {};
   const code = Number(gerr.code ?? 0);
   const message =

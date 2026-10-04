@@ -317,9 +317,10 @@ test('media endpoints degrade cleanly without R2 credentials', async () => {
 });
 
 test('oauth start refuses unconfigured providers, callback redirects with error', async () => {
-  const fb = await api('/api/oauth/facebook/start', 'GET', undefined, { auth: true });
-  expect(fb.status).toBe(400);
-  expect(((await fb.json()) as { error: string }).error).toMatch(/Facebook/i);
+  // linkedin has no credentials in the test env — the only still-unconfigured OAuth provider here.
+  const li = await api('/api/oauth/linkedin/start', 'GET', undefined, { auth: true });
+  expect(li.status).toBe(400);
+  expect(((await li.json()) as { error: string }).error).toMatch(/LinkedIn/i);
 
   const bs = await api('/api/oauth/bluesky/start', 'GET', undefined, { auth: true });
   expect(bs.status).toBe(400);

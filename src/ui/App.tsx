@@ -15,12 +15,13 @@ import { SignupPage } from './pages/Signup';
 import { TermsPage } from './pages/Terms';
 import { ServicesPage } from './pages/Services';
 import { PrivacyPage } from './pages/Privacy';
+import { DataDeletionPage } from './pages/DataDeletion';
 
 const APP_ROUTES = new Set([
   '/app/compose', '/app/queue', '/app/calendar', '/app/accounts', '/app/settings', '/app/diagnostics', '/app/setup',
 ]);
 
-const PUBLIC_ROUTES = new Set(['/', '/login', '/signup', '/terms', '/services', '/privacy', '/setup']);
+const PUBLIC_ROUTES = new Set(['/', '/login', '/signup', '/terms', '/services', '/privacy', '/data-deletion', '/setup']);
 
 // Pre-v0.2 links (e.g. OAuth callbacks redirecting to /accounts?connected=1)
 // land on their /app equivalents, query string preserved.
@@ -120,6 +121,8 @@ export default function App() {
     page = <ServicesPage />;
   } else if (path === '/privacy') {
     page = <PrivacyPage />;
+  } else if (path === '/data-deletion') {
+    page = <DataDeletionPage />;
   } else if (path === '/login') {
     page = <LoginPage onDone={() => { refreshMe(); navigate('/app/compose'); }} onNav={navigate} />;
   } else if (path === '/signup' && !authed) {
@@ -146,7 +149,7 @@ export default function App() {
       {authed && !PUBLIC_ROUTES.has(path) && <Nav path={path} email={me.email} onNavigate={navigate} onLogout={logout} />}
       <main
         className={
-          path === '/' || path === '/terms' || path === '/services' || path === '/privacy'
+          path === '/' || path === '/terms' || path === '/services' || path === '/privacy' || path === '/data-deletion'
             ? 'main main-landing'
             : path === '/login' || path === '/signup'
               ? 'main main-auth'

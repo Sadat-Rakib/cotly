@@ -26,7 +26,7 @@ export const PLATFORM_REGISTRY: PlatformInfo[] = [
   { id: 'x', label: 'X', state: 'ready', note: 'Official API, pay-per-post. Publishing is guarded by a hard monthly budget.' },
   { id: 'mastodon', label: 'Mastodon', state: 'coming', note: 'Official API with native scheduling support on most servers.' },
   { id: 'telegram', label: 'Telegram', state: 'coming', note: 'Official Bot API for channels and groups.' },
-  { id: 'instagram', label: 'Instagram', state: 'coming', note: 'Planned after the Meta app review is complete.' },
+  { id: 'instagram', label: 'Instagram', state: 'ready', note: 'Publisher built for Business/Creator accounts. Image posts need object storage enabled.' },
   { id: 'youtube', label: 'YouTube', state: 'coming', note: 'Uploads stay private until the Google API audit is done.' },
   { id: 'tiktok', label: 'TikTok', state: 'coming', note: 'Direct posting API, private posts until TikTok approves the client.' },
   { id: 'pinterest', label: 'Pinterest', state: 'coming', note: 'Pin creation through the official API is planned.' },

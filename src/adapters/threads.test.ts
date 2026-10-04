@@ -68,7 +68,8 @@ describe('threads adapter', () => {
     expect(url).toContain('state=st9');
 
     const calls = stubFetch([
-      () => jsonRes(200, { access_token: TOKEN }),
+      () => jsonRes(200, { access_token: 'short_token' }),
+      () => jsonRes(200, { access_token: TOKEN, expires_in: 5184000 }),
       () => jsonRes(200, { id: 'th-user-1', username: 'tester', threads_profile_image_url: 'https://img/t.png' }),
     ]);
     const cb = await adapter.handleCallback(env, new URLSearchParams('code=abc'));
@@ -78,8 +79,30 @@ describe('threads adapter', () => {
       avatarUrl: 'https://img/t.png',
     });
     expect(cb.tokens.accessToken).toBe(TOKEN);
+    expect(cb.tokens.expiresAt).toBeGreaterThan(Math.floor(Date.now() / 1000));
     expect(calls[0]?.url).toContain('graph.threads.net/oauth/access_token');
-    expect(calls[1]?.url).toContain('graph.threads.net/v1.0/me?fields=id,username,threads_profile_image_url');
+    expect(calls[1]?.url).toContain('graph.threads.net/long_lived_access_token');
+    expect(calls[1]?.url).toContain('grant_type=threads_exchange');
+    expect(calls[2]?.url).toContain('graph.threads.net/v1.0/me?fields=id,username,threads_profile_image_url');
+  });
+
+  it('refreshes a long-lived token via threads_refresh', async () => {
+    const calls = stubFetch([() => jsonRes(200, { access_token: 'renewed-token', expires_in: 5184000 })]);
+    const next = await new ThreadsAdapter().refresh(env, { accessToken: TOKEN });
+    expect(next.accessToken).toBe('renewed-token');
+    expect(next.expiresAt).toBeGreaterThan(Math.floor(Date.now() / 1000));
+    expect(calls[0]?.url).toContain('refresh_access_token?grant_type=threads_refresh');
+  });
+
+  it('falls back to the short-lived token when the long-lived exchange fails', async () => {
+    stubFetch([
+      () => jsonRes(200, { access_token: TOKEN }),
+      () => jsonRes(400, { error: { message: 'exchange unavailable' } }),
+      () => jsonRes(200, { id: 'th-user-1', username: 'tester' }),
+    ]);
+    const cb = await new ThreadsAdapter().handleCallback(env, new URLSearchParams('code=abc'));
+    expect(cb.tokens.accessToken).toBe(TOKEN);
+    expect(cb.tokens.expiresAt).toBeUndefined();
   });
 
   it('publishes text: container then publish, returns pending with container id', async () => {

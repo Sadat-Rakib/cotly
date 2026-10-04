@@ -111,6 +111,8 @@ test('setup/status reports honest booleans on a bare deployment', async () => {
     LINKEDIN_CLIENT_SECRET: undefined,
     X_CLIENT_ID: undefined,
     X_CLIENT_SECRET: undefined,
+    INSTAGRAM_CLIENT_ID: undefined,
+    INSTAGRAM_CLIENT_SECRET: undefined,
   });
   const res = await api('/api/setup/status', 'GET', undefined, { auth: true });
   expect(res.status).toBe(200);
@@ -144,7 +146,10 @@ test('setup/status reports honest booleans on a bare deployment', async () => {
   expect(byProvider.x?.configured).toBe(false);
   expect(byProvider.x?.reason).toContain('X_CLIENT_ID');
   expect(byProvider.x?.implemented).toBe(true);
-  for (const p of ['instagram', 'reddit', 'tiktok']) {
+  expect(byProvider.instagram?.configured).toBe(false);
+  expect(byProvider.instagram?.reason).toContain('INSTAGRAM_CLIENT_ID');
+  expect(byProvider.instagram?.implemented).toBe(true);
+  for (const p of ['reddit', 'tiktok']) {
     expect(byProvider[p]?.configured).toBe(false);
     expect(byProvider[p]?.implemented).toBe(false);
     expect(byProvider[p]?.badge).toBe('not_configured');
@@ -292,7 +297,7 @@ test('accounts/:id/test maps adapter support honestly', async () => {
       `INSERT INTO social_accounts (id, provider, external_id, display_name, access_token_enc, token_expires_at, status, meta, created_at, updated_at)
        VALUES (?,?,?,?,?,?, 'connected', '{}', ?, ?)`,
     )
-    .bind('acc_ck_x', 'instagram', 'ig_user_1', 'IG Account', await encryptSecret(SECRET, 'super-secret-x-token'), t + 3600, t, t)
+    .bind('acc_ck_x', 'reddit', 'reddit_user_1', 'Reddit Account', await encryptSecret(SECRET, 'super-secret-x-token'), t + 3600, t, t)
     .run();
   await e.DB
     .prepare(
@@ -304,7 +309,7 @@ test('accounts/:id/test maps adapter support honestly', async () => {
 
   expect((await api('/api/accounts/acc_does_not_exist/test', 'POST', undefined, { auth: true, csrf: true })).status).toBe(404);
 
-  // 'instagram' has no adapter at all — must be a 400, never a 500.
+  // 'reddit' has no adapter at all — must be a 400, never a 500.
   const xRes = await api('/api/accounts/acc_ck_x/test', 'POST', undefined, { auth: true, csrf: true });
   expect(xRes.status).toBe(400);
   expect(((await xRes.json()) as { error: string }).error).toMatch(/not available/i);

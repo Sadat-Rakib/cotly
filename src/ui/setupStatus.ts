@@ -75,6 +75,13 @@ export const OAUTH_PROVIDER_META: Record<string, OAuthProviderMeta> = {
     idEnv: 'LINKEDIN_CLIENT_ID',
     secretEnv: 'LINKEDIN_CLIENT_SECRET',
   },
+  instagram: {
+    portal: 'https://developers.facebook.com/apps',
+    portalName: 'developers.facebook.com',
+    appType: 'Instagram app (Instagram Login) with Business/Creator account',
+    idEnv: 'INSTAGRAM_CLIENT_ID',
+    secretEnv: 'INSTAGRAM_CLIENT_SECRET',
+  },
   x: {
     portal: 'https://developer.x.com/en/portal/dashboard',
     portalName: 'developer.x.com',

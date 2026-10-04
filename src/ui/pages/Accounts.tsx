@@ -38,6 +38,12 @@ const CARDS: Card[] = [
     flow: 'oauth',
   },
   {
+    provider: 'instagram',
+    label: 'Instagram',
+    blurb: 'Publish to your Business or Creator account. Image posts only for now.',
+    flow: 'oauth',
+  },
+  {
     provider: 'x',
     label: 'X',
     blurb: 'Post to your X account. Publishing is pay-per-post and guarded by a monthly budget.',
