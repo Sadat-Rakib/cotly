@@ -72,8 +72,10 @@ export class ThreadsAdapter implements PlatformAdapter {
     // A silent failure here stores a token that dies within the hour, so the
     // outcome is always logged (safe fields only) and short tokens are marked
     // with their true expiry so the engine knows refresh is required.
+    // Threads exchanges and refreshes tokens on /oauth/access_token — there is
+    // no /long_lived_access_token node on graph.threads.net (Meta error 100).
     const ll = await httpJson(
-      `${GRAPH.replace('/v1.0', '')}/long_lived_access_token?grant_type=threads_exchange&client_secret=${encodeURIComponent(env.THREADS_CLIENT_SECRET ?? '')}&access_token=${encodeURIComponent(accessToken)}`,
+      `${GRAPH.replace('/v1.0', '')}/oauth/access_token?grant_type=threads_exchange&client_secret=${encodeURIComponent(env.THREADS_CLIENT_SECRET ?? '')}&access_token=${encodeURIComponent(accessToken)}`,
     );
     if (ll.ok && typeof (ll.data as { access_token?: unknown } | null)?.access_token === 'string') {
       accessToken = String((ll.data as { access_token: string }).access_token);
