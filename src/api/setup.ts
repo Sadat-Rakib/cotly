@@ -22,11 +22,11 @@ const OAUTH_ENV_KEYS: Record<string, { id: string; secret: string; notSetReason:
   facebook: { id: 'META_CLIENT_ID', secret: 'META_CLIENT_SECRET', notSetReason: 'META_CLIENT_ID/SECRET not set' },
   threads: { id: 'THREADS_CLIENT_ID', secret: 'THREADS_CLIENT_SECRET', notSetReason: 'THREADS_CLIENT_ID/SECRET not set' },
   linkedin: { id: 'LINKEDIN_CLIENT_ID', secret: 'LINKEDIN_CLIENT_SECRET', notSetReason: 'LINKEDIN_CLIENT_ID/SECRET not set' },
+  x: { id: 'X_CLIENT_ID', secret: 'X_CLIENT_SECRET', notSetReason: 'X_CLIENT_ID/SECRET not set' },
 };
 
 const UNIMPLEMENTED_PROVIDERS: Array<{ provider: string; reason: string }> = [
   { provider: 'instagram', reason: 'Not implemented yet. Instagram publishing is planned for a future release.' },
-  { provider: 'x', reason: 'Not implemented yet. X publishing needs the paid API tier and is optional.' },
   { provider: 'reddit', reason: 'Not implemented yet. Reddit publishing is planned.' },
   { provider: 'tiktok', reason: 'Not implemented yet. TikTok publishing is planned.' },
 ];
@@ -68,7 +68,7 @@ export async function getSetupStatus(env: Env): Promise<Response> {
   };
 
   const providers: ProviderStatusView[] = [];
-  for (const provider of ['facebook', 'threads', 'linkedin', 'bluesky']) {
+  for (const provider of ['facebook', 'threads', 'linkedin', 'bluesky', 'x']) {
     const isConfigured = configured(provider);
     const s = stats.get(provider);
     const connectedCount = s?.connected ?? 0;
@@ -101,7 +101,7 @@ export async function getSetupStatus(env: Env): Promise<Response> {
   const accountConnected = accounts.some((a) => a.status === 'connected');
   // "Ready to publish" = OAuth app credentials wired for at least one OAuth
   // platform, or any account actually connected (Bluesky/Mock need no OAuth app).
-  const providerReady = ['facebook', 'threads', 'linkedin'].some((p) => configured(p)) || accountConnected;
+  const providerReady = ['facebook', 'threads', 'linkedin', 'x'].some((p) => configured(p)) || accountConnected;
 
   const checklist = await launchChecklist(env, {
     ownerExists,

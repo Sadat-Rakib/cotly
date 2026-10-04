@@ -38,6 +38,12 @@ const CARDS: Card[] = [
     flow: 'oauth',
   },
   {
+    provider: 'x',
+    label: 'X',
+    blurb: 'Post to your X account. Publishing is pay-per-post and guarded by a monthly budget.',
+    flow: 'oauth',
+  },
+  {
     provider: 'mock',
     label: 'MockSocial',
     blurb: 'Built-in test provider. Never publishes anything real.',

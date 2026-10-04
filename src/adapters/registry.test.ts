@@ -22,14 +22,14 @@ const input = (): PublishInput => ({
 });
 
 describe('adapter registry', () => {
-  it('covers all six working providers', () => {
-    for (const provider of ['facebook', 'threads', 'linkedin', 'bluesky', 'mock', 'assisted'] as const) {
+  it('covers all seven working providers', () => {
+    for (const provider of ['facebook', 'threads', 'linkedin', 'bluesky', 'x', 'mock', 'assisted'] as const) {
       expect(getAdapter(provider).provider).toBe(provider);
     }
   });
 
   it('has no adapter for unimplemented providers', () => {
-    for (const provider of ['instagram', 'x', 'reddit'] as const) {
+    for (const provider of ['instagram', 'reddit'] as const) {
       expect(() => getAdapter(provider)).toThrow(/No adapter registered/);
     }
   });

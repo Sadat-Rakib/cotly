@@ -6,6 +6,7 @@ import { BlueskyAdapter } from './bluesky';
 import { FacebookAdapter } from './facebook';
 import { LinkedInAdapter } from './linkedin';
 import { ThreadsAdapter } from './threads';
+import { XAdapter } from './x';
 
 const registry: Partial<Record<Provider, PlatformAdapter>> = {};
 for (const adapter of [
@@ -13,6 +14,7 @@ for (const adapter of [
   new ThreadsAdapter(),
   new LinkedInAdapter(),
   new BlueskyAdapter(),
+  new XAdapter(),
   new AssistedAdapter(),
   new MockSocialAdapter(),
 ]) {
@@ -31,7 +33,7 @@ export function registerAdapter(adapter: PlatformAdapter): void {
 
 export function oauthConfigured(
   provider: Provider,
-  env: { META_CLIENT_ID?: string; THREADS_CLIENT_ID?: string; LINKEDIN_CLIENT_ID?: string },
+  env: { META_CLIENT_ID?: string; THREADS_CLIENT_ID?: string; LINKEDIN_CLIENT_ID?: string; X_CLIENT_ID?: string },
 ): boolean {
   switch (provider) {
     case 'facebook':
@@ -40,6 +42,8 @@ export function oauthConfigured(
       return Boolean(env.THREADS_CLIENT_ID);
     case 'linkedin':
       return Boolean(env.LINKEDIN_CLIENT_ID);
+    case 'x':
+      return Boolean(env.X_CLIENT_ID);
     default:
       return false;
   }

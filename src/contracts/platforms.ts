@@ -23,7 +23,7 @@ export const PLATFORM_REGISTRY: PlatformInfo[] = [
   { id: 'facebook', label: 'Facebook Pages', state: 'ready', note: 'Publisher built. Add Meta app credentials, then connect a Page.' },
   { id: 'threads', label: 'Threads', state: 'ready', note: 'Publisher built on the official Threads API. Add Meta app credentials to connect.' },
   { id: 'linkedin', label: 'LinkedIn', state: 'adapter', note: 'Publisher built. Waiting on LinkedIn app credentials.' },
-  { id: 'x', label: 'X', state: 'coming', note: 'Official pay-per-use API. Ships with hard spending guardrails.' },
+  { id: 'x', label: 'X', state: 'ready', note: 'Official API, pay-per-post. Publishing is guarded by a hard monthly budget.' },
   { id: 'mastodon', label: 'Mastodon', state: 'coming', note: 'Official API with native scheduling support on most servers.' },
   { id: 'telegram', label: 'Telegram', state: 'coming', note: 'Official Bot API for channels and groups.' },
   { id: 'instagram', label: 'Instagram', state: 'coming', note: 'Planned after the Meta app review is complete.' },

@@ -57,8 +57,10 @@ export const CAPABILITIES: Record<Provider, PlatformCapabilities> = {
     text: true,
     images: true,
     maxImages: 4,
-    video: true,
-    maxVideoMB: 512,
+    // Video needs X-side media processing that Cotly cannot wait on; the
+    // adapter rejects it, so block it in the composer too.
+    video: false,
+    maxVideoMB: 0,
     maxCaptionChars: 280,
     mediaRequired: false,
     directPublish: true,

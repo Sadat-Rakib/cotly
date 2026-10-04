@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <!-- Cotly social avatar: white mark on a black tile. Use for X/Meta/LinkedIn app icons. -->
+  <rect width="512" height="512" rx="112" fill="#000000"/>
+  <circle cx="256" cy="256" r="168" stroke="#ffffff" stroke-width="41.6" stroke-linecap="round" stroke-dasharray="844.8 211.2" transform="rotate(36 256 256)"/>
+  <path d="M291.2 220.8c6.4-54.4 41.6-94.4 105.6-108.8-8 62.4-46.4 99.2-105.6 108.8z" fill="#ffffff"/>
+</svg>

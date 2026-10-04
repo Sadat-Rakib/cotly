@@ -75,6 +75,13 @@ export const OAUTH_PROVIDER_META: Record<string, OAuthProviderMeta> = {
     idEnv: 'LINKEDIN_CLIENT_ID',
     secretEnv: 'LINKEDIN_CLIENT_SECRET',
   },
+  x: {
+    portal: 'https://developer.x.com/en/portal/dashboard',
+    portalName: 'developer.x.com',
+    appType: 'X app with OAuth 2.0 (PKCE) and user authentication enabled',
+    idEnv: 'X_CLIENT_ID',
+    secretEnv: 'X_CLIENT_SECRET',
+  },
 };
 
 export function isOAuthProvider(provider: string): boolean {

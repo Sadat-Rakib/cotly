@@ -27,3 +27,6 @@ APP_URL = "https://cotly.cotly-app.workers.dev"
 ALLOW_REGISTRATION = "false"
 MOCK_SOCIAL_ENABLED = "true"
 MEDIA_RETENTION_HOURS = "48"
+# X is pay-per-post; publishing is enabled but hard-capped per month.
+X_API_ENABLED = "true"
+X_MAX_MONTHLY_SPEND_USD = "5"
