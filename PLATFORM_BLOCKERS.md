@@ -37,12 +37,18 @@ legitimately connected that way. Every publish attempt records the route used.
 
 ## Threads
 
-- Completed: official Threads API adapter (container -> publish -> poll),
-  OAuth flow, 10 adapter tests.
-- Missing: `THREADS_CLIENT_ID` + `THREADS_CLIENT_SECRET`, callback URL
-  `https://cotly.cotly-app.workers.dev/oauth/threads/callback`, products
-  `threads_basic` + `threads_content_publish` on the same Meta app.
-- Works immediately after: Connect Threads from Accounts or Setup.
+- State: LIVE VERIFIED (2026-10-04). A real post was published through the
+  production cron pipeline and confirmed with a remote post id and a public
+  permalink. Long-lived token exchange works (60 days, expires_in 5184000).
+- Implementation notes that cost real debugging time: the container edge is
+  `POST /{user-id}/threads` (NOT `/threads_media`, which does not exist and
+  returns a misleading 100/33 "object does not exist"); containers process
+  asynchronously, so `threads_publish` must retry on error 24; container
+  nodes have no `status_code` field on graph.threads.net (confirm via the
+  published media's `permalink` instead); Threads app tokens are rejected by
+  `debug_token` on both graph hosts, so granted scopes can only be proven by
+  a successful publish itself.
+- Remaining user actions: none for Threads — it is connected and publishing.
 
 ## LinkedIn
 

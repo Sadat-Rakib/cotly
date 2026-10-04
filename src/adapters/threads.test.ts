@@ -94,18 +94,32 @@ describe('threads adapter', () => {
     expect(cb.tokens.accessToken).toBe(TOKEN);
     expect(cb.tokens.expiresAt).toBeGreaterThan(Math.floor(Date.now() / 1000));
     expect(calls[0]?.url).toContain('graph.threads.net/oauth/access_token');
-    expect(calls[1]?.url).toContain('graph.threads.net/oauth/access_token');
-    expect(decodeURIComponent(calls[1]?.url ?? '')).toContain('grant_type=threads_exchange');
-    expect(calls[1]?.url).toContain('grant_type=threads_exchange');
+    // Documented exchange: unversioned /access_token with th_exchange_token and
+    // the app secret — no client_id, no /v1.0 prefix.
+    expect(calls[1]?.url).toContain('graph.threads.net/access_token?grant_type=th_exchange_token');
+    expect(decodeURIComponent(calls[1]?.url ?? '')).toContain('client_secret=');
+    expect(calls[1]?.url).not.toContain('client_id=');
     expect(calls[2]?.url).toContain('graph.threads.net/v1.0/me?fields=id,username,name,threads_profile_picture_url,threads_biography');
   });
 
-  it('refreshes a long-lived token via threads_refresh', async () => {
-    const calls = stubFetch([() => jsonRes(200, { access_token: 'renewed-token', expires_in: 5184000 })]);
+  it('renews via th_refresh_token when the stored token is already long-lived', async () => {
+    const calls = stubFetch([
+      () => jsonRes(400, { error: { message: 'token is not short-lived' } }),
+      () => jsonRes(200, { access_token: 'renewed-token', expires_in: 5184000 }),
+    ]);
     const next = await new ThreadsAdapter().refresh(env, { accessToken: TOKEN });
     expect(next.accessToken).toBe('renewed-token');
     expect(next.expiresAt).toBeGreaterThan(Math.floor(Date.now() / 1000));
-    expect(calls[0]?.url).toContain('refresh_access_token?grant_type=threads_refresh');
+    expect(calls[0]?.url).toContain('graph.threads.net/access_token?grant_type=th_exchange_token');
+    expect(calls[1]?.url).toContain('refresh_access_token?grant_type=th_refresh_token');
+  });
+
+  it('exchanges a stored short-lived token during refresh instead of refreshing', async () => {
+    const calls = stubFetch([() => jsonRes(200, { access_token: 'long-token', expires_in: 5184000 })]);
+    const next = await new ThreadsAdapter().refresh(env, { accessToken: 'short_token' });
+    expect(next.accessToken).toBe('long-token');
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toContain('grant_type=th_exchange_token');
   });
 
   it('falls back to the short-lived token when the long-lived exchange fails', async () => {
@@ -122,24 +136,44 @@ describe('threads adapter', () => {
     expect(cb.tokens.expiresAt).toBeGreaterThan(Math.floor(Date.now() / 1000) + 3500);
   });
 
-  it('publishes text: container then publish, returns pending with container id', async () => {
+  it('publishes text: container then publish, returns pending with the published id', async () => {
     const calls = stubFetch([() => jsonRes(200, { id: 'ct_1' }), () => jsonRes(200, { id: 'th_media_1' })]);
     const out = await new ThreadsAdapter().publish(env, input());
     expect(out.kind).toBe('pending');
-    expect((out as { externalId: string }).externalId).toBe('ct_1');
-    expect(calls[0]?.url).toContain('/th-user-1/threads_media');
-    expect(decodeURIComponent(String(calls[0]?.init?.body))).toContain('media_type=TEXT');
-    expect(calls[1]?.url).toContain('/th-user-1/threads_publish');
-    expect(decodeURIComponent(String(calls[1]?.init?.body))).toContain('creation_id=ct_1');
+    // The published media id (not the container id) is the pending externalId.
+    expect((out as { externalId: string }).externalId).toBe('th_media_1');
+    expect(calls[0]?.url).toContain('/th-user-1/threads?media_type=TEXT');
+    // Container params ride in the query string, mirroring Meta's documented form.
+    expect(decodeURIComponent(String(calls[0]?.url))).toContain('media_type=TEXT');
+    expect(decodeURIComponent(String(calls[1]?.url))).toContain('threads_publish?creation_id=ct_1');
   });
 
   it('publishes a single image via a presigned image_url container', async () => {
     const calls = stubFetch([() => jsonRes(200, { id: 'ct_2' }), () => jsonRes(200, { id: 'th_media_2' })]);
     const out = await new ThreadsAdapter().publish(env, input({ media: [media()] }));
     expect(out.kind).toBe('pending');
-    expect(decodeURIComponent(String(calls[0]?.init?.body))).toContain('media_type=IMAGE');
-    expect(decodeURIComponent(String(calls[0]?.init?.body))).toContain('image_url=https://r2account.r2.cloudflarestorage.com');
-    expect(decodeURIComponent(String(calls[0]?.init?.body))).toContain('X-Amz-Signature');
+    expect(decodeURIComponent(String(calls[0]?.url))).toContain('threads?media_type=IMAGE');
+    expect(decodeURIComponent(String(calls[0]?.url))).toContain('image_url=https://r2account.r2.cloudflarestorage.com');
+    expect(decodeURIComponent(String(calls[0]?.url))).toContain('X-Amz-Signature');
+  });
+
+  it('retries the processing race (error 24) and gives up retryable without publishing', async () => {
+    vi.useFakeTimers();
+    try {
+      const calls = stubFetch([
+        () => jsonRes(200, { id: 'ct_3' }),
+        ...Array.from({ length: 10 }, () => () => jsonRes(400, { error: { code: 24, message: 'The requested resource does not exist' } })),
+      ]);
+      const pending = new ThreadsAdapter().publish(env, input());
+      for (let i = 0; i < 12; i++) await vi.advanceTimersByTimeAsync(3000);
+      const out = await pending;
+      expect(out).toMatchObject({ kind: 'failed', retryable: true, errorCode: 'CONTAINER_PROCESSING' });
+      // Exactly the 10 bounded publish attempts with the same creation_id —
+      // retries can never duplicate the post (one creation_id publishes once).
+      expect(calls.filter((c) => c.url.includes('threads_publish'))).toHaveLength(10);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('rejects multiple media and oversized captions without calling the provider', async () => {
@@ -151,30 +185,34 @@ describe('threads adapter', () => {
     expect(calls).toHaveLength(0);
   });
 
-  it('resolves pending containers: FINISHED confirms, IN_PROGRESS waits, EXPIRED fails', async () => {
+  it('resolves pending posts: permalink confirms, missing permalink waits', async () => {
     const adapter = new ThreadsAdapter();
-    stubFetch([() => jsonRes(200, { status_code: 'FINISHED', permalink: 'https://threads.net/@tester/post/1' })]);
-    const done = await adapter.resolvePending(env, account(), 'ct_1');
-    expect(done).toMatchObject({ kind: 'confirmed', externalId: 'ct_1', permalink: 'https://threads.net/@tester/post/1' });
+    stubFetch([() => jsonRes(200, { permalink: 'https://threads.net/@tester/post/1' })]);
+    const done = await adapter.resolvePending(env, account(), 'th_media_1');
+    expect(done).toMatchObject({ kind: 'confirmed', externalId: 'th_media_1', permalink: 'https://threads.net/@tester/post/1' });
 
-    stubFetch([() => jsonRes(200, { status_code: 'IN_PROGRESS' })]);
-    const waiting = await adapter.resolvePending(env, account(), 'ct_1');
-    expect(waiting).toEqual({ kind: 'pending', externalId: 'ct_1' });
-
-    stubFetch([() => jsonRes(200, { status_code: 'EXPIRED', error_message: 'container expired' })]);
-    const expired = await adapter.resolvePending(env, account(), 'ct_1');
-    expect(expired).toMatchObject({ kind: 'failed', retryable: false, errorCode: 'CONTAINER_ERROR' });
-    expect(JSON.stringify(expired)).toContain('expired');
+    stubFetch([() => jsonRes(200, {})]);
+    const waiting = await adapter.resolvePending(env, account(), 'th_media_1');
+    expect(waiting).toEqual({ kind: 'pending', externalId: 'th_media_1' });
   });
 
   it('maps token errors to needs_reconnect and rate limits to retryable', async () => {
-    stubFetch([() => jsonRes(400, { error: { code: 190, message: 'access token invalid' } })]);
+    // Every failed graph POST also runs the failure diagnostics (/me,
+    // debug_token, two edge probes) — stub those so the real error mapping is
+    // what gets exercised.
+    const probeStubs = () => [
+      () => jsonRes(200, { id: 'th-user-1', username: 'tester' }),
+      () => jsonRes(400, { error: { message: 'debug unavailable' } }),
+      () => jsonRes(400, { error: { code: 100, error_subcode: 33, message: 'Unsupported post request.' } }),
+      () => jsonRes(400, { error: { code: 100, error_subcode: 33, message: 'Unsupported post request.' } }),
+    ];
+    stubFetch([() => jsonRes(400, { error: { code: 190, message: 'access token invalid' } }), ...probeStubs()]);
     const reconnect = await new ThreadsAdapter().publish(env, input());
     expect(reconnect.kind).toBe('needs_reconnect');
     expect(JSON.stringify(reconnect)).toContain('Reconnect Threads');
     expect(JSON.stringify(reconnect)).not.toContain(TOKEN);
 
-    stubFetch([() => new Response('slow down', { status: 429 })]);
+    stubFetch([() => new Response('slow down', { status: 429 }), ...probeStubs()]);
     const limited = await new ThreadsAdapter().publish(env, input());
     expect(limited).toMatchObject({ kind: 'failed', retryable: true, errorCode: 'RATE_LIMITED' });
   });

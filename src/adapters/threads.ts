@@ -1,8 +1,10 @@
 import { getCapabilities } from '../contracts/capabilities';
 import type { Env } from '../contracts/env';
 import type { PlatformAdapter, PublishInput, PublishOutcome, SocialAccountRecord } from '../contracts/types';
+import { encryptSecret } from '../lib/crypto';
 import {
   fail,
+  failRetryable,
   graphError,
   graphTestConnection,
   httpJson,
@@ -68,28 +70,17 @@ export class ThreadsAdapter implements PlatformAdapter {
     }
     let accessToken = String((tok.data as { access_token: string }).access_token);
     let expiresAt: number | undefined;
-    // Exchange the short-lived token (1h) for a long-lived one (60 days).
-    // A silent failure here stores a token that dies within the hour, so the
-    // outcome is always logged (safe fields only) and short tokens are marked
-    // with their true expiry so the engine knows refresh is required.
-    // Threads exchanges and refreshes tokens on /oauth/access_token — there is
-    // no /long_lived_access_token node on graph.threads.net (Meta error 100).
-    const ll = await httpJson(
-      `${GRAPH.replace('/v1.0', '')}/oauth/access_token?grant_type=threads_exchange&client_id=${encodeURIComponent(env.THREADS_CLIENT_ID ?? '')}&client_secret=${encodeURIComponent(env.THREADS_CLIENT_SECRET ?? '')}&access_token=${encodeURIComponent(accessToken)}`,
-    );
-    if (ll.ok && typeof (ll.data as { access_token?: unknown } | null)?.access_token === 'string') {
-      accessToken = String((ll.data as { access_token: string }).access_token);
-      const expiresIn = (ll.data as { expires_in?: unknown }).expires_in;
-      if (typeof expiresIn === 'number') expiresAt = Math.floor(Date.now() / 1000) + expiresIn;
-      console.log('[threads-oauth] long-lived exchange ok, expires in', expiresIn ?? 'unknown');
+    // Exchange the short-lived token (1h) for a long-lived one (60 days,
+    // expires_in ≈ 5184000). A silent failure here stores a token that dies
+    // within the hour, so the outcome is always logged (safe fields only) and
+    // short tokens are marked with their true expiry so the engine knows to
+    // exchange/refresh before publishing.
+    const ll = await this.exchangeLongLived(env, accessToken);
+    if (ll) {
+      accessToken = ll.accessToken;
+      expiresAt = ll.expiresAt;
+      console.log('[threads-oauth] long-lived exchange ok, expires in', ll.expiresIn ?? 'unknown');
     } else {
-      const err = (ll.data as { error?: { code?: number; message?: string } } | null)?.error;
-      console.log('[threads-oauth] long-lived exchange FAILED', {
-        httpStatus: ll.status,
-        metaErrorCode: err?.code ?? null,
-        metaErrorMessage: redact(String(err?.message ?? ''), secrets),
-        clientIdSuffix: `…${(env.THREADS_CLIENT_ID ?? '').slice(-4)}`,
-      });
       expiresAt = Math.floor(Date.now() / 1000) + 3600;
     }
     // Official Threads profile fields only — /me on graph.threads.net, never
@@ -139,19 +130,55 @@ export class ThreadsAdapter implements PlatformAdapter {
     };
   }
 
-  // Long-lived Threads tokens renew via threads_refresh (valid only after the
-  // token is at least 24h old and not within 24h of expiry); the engine calls
-  // this automatically when the stored expiry passes.
+  // Long-lived Threads tokens renew via th_refresh_token (valid only after the
+  // token is at least 24h old and not within 24h of expiry). A stored
+  // short-lived token can never refresh — it is exchanged instead, so the
+  // exchange is attempted first and the documented refresh is the fallback.
   async refresh(env: Env, tokens: { accessToken: string }): Promise<{ accessToken: string; expiresAt?: number }> {
+    const secrets = secretsOf(env, tokens.accessToken);
+    const exchanged = await this.exchangeLongLived(env, tokens.accessToken);
+    if (exchanged) {
+      return { accessToken: exchanged.accessToken, ...(exchanged.expiresAt ? { expiresAt: exchanged.expiresAt } : {}) };
+    }
     const resp = await httpJson(
-      `${GRAPH.replace('/v1.0', '')}/refresh_access_token?grant_type=threads_refresh&access_token=${encodeURIComponent(tokens.accessToken)}`,
+      `${GRAPH.replace('/v1.0', '')}/refresh_access_token?grant_type=th_refresh_token&access_token=${encodeURIComponent(tokens.accessToken)}`,
     );
     const data = (resp.data ?? {}) as { access_token?: unknown; expires_in?: unknown };
     if (!resp.ok || typeof data.access_token !== 'string') {
-      throw needsReconnect(secretsOf(env, tokens.accessToken), 'Your Threads authorization expired. Reconnect Threads.');
+      throw needsReconnect(secrets, 'Your Threads authorization expired. Reconnect Threads.');
     }
     const expiresAt = typeof data.expires_in === 'number' ? Math.floor(Date.now() / 1000) + data.expires_in : undefined;
     return { accessToken: data.access_token, ...(expiresAt ? { expiresAt } : {}) };
+  }
+
+  // GET graph.threads.net/access_token?grant_type=th_exchange_token — the one
+  // documented server-side exchange. No client_id, no /v1.0 prefix. Returns
+  // null on any Meta rejection (callers log and fall back).
+  private async exchangeLongLived(
+    env: Env,
+    shortToken: string,
+  ): Promise<{ accessToken: string; expiresAt?: number; expiresIn?: number } | null> {
+    const secrets = secretsOf(env, shortToken);
+    const resp = await httpJson(
+      `${GRAPH.replace('/v1.0', '')}/access_token?grant_type=th_exchange_token&client_secret=${encodeURIComponent(env.THREADS_CLIENT_SECRET ?? '')}&access_token=${encodeURIComponent(shortToken)}`,
+    );
+    const data = (resp.data ?? {}) as { access_token?: unknown; expires_in?: unknown };
+    if (!resp.ok || typeof data.access_token !== 'string') {
+      const err = (resp.data as { error?: { code?: number; message?: string } } | null)?.error;
+      console.log('[threads-oauth] long-lived exchange FAILED', {
+        httpStatus: resp.status,
+        metaErrorCode: err?.code ?? null,
+        metaErrorMessage: redact(String(err?.message ?? ''), secrets),
+        clientIdSuffix: `…${(env.THREADS_CLIENT_ID ?? '').slice(-4)}`,
+      });
+      return null;
+    }
+    const expiresIn = typeof data.expires_in === 'number' ? data.expires_in : undefined;
+    return {
+      accessToken: data.access_token,
+      expiresIn,
+      ...(expiresIn !== undefined ? { expiresAt: Math.floor(Date.now() / 1000) + expiresIn } : {}),
+    };
   }
 
   async testConnection(env: Env, account: SocialAccountRecord): Promise<TestConnectionResult> {
@@ -173,6 +200,10 @@ export class ThreadsAdapter implements PlatformAdapter {
       if (input.caption.length > MAX_CHARS) {
         throw fail(secrets, 'CAPTION_TOO_LONG', `Threads captions are limited to ${MAX_CHARS} characters. Shorten the caption and retry.`);
       }
+      // A stored short-lived token (dies within the hour) is exchanged for the
+      // long-lived one before publishing; the upgraded token is persisted so
+      // later attempts and other targets reuse it.
+      await this.upgradeShortToken(env, input.account, secrets);
       const uid = input.account.externalId;
       const images = input.media.filter((m) => m.mime.startsWith('image/'));
       const videos = input.media.filter((m) => m.mime.startsWith('video/'));
@@ -189,43 +220,100 @@ export class ThreadsAdapter implements PlatformAdapter {
         params.set('media_type', 'IMAGE');
         params.set('image_url', await presignMediaGet(env, firstImage.r2Key));
       }
-      const container = await this.post(env, secrets, `/${uid}/threads_media`, params);
+      // Container creation posts to /{uid}/threads (Meta's documented edge;
+      // /threads_media does not exist and returns a misleading 100/33 "object
+      // does not exist"). Params ride in the query string, mirroring Meta's
+      // documented form.
+      const container = await this.post(env, secrets, `/${uid}/threads?${params.toString()}`, new URLSearchParams());
       const containerId = requireId(container, secrets, 'Threads');
       console.log('[threads-publish] container created', containerId.slice(0, 8) + '…', 'media_type:', params.get('media_type'));
-      const pub = await this.post(env, secrets, `/${uid}/threads_publish`, new URLSearchParams({ creation_id: containerId }));
+      // Meta processes the container asynchronously: publishing too early
+      // fails with (24) "The requested resource does not exist". Retry the
+      // publish for ~30s — safe, because a creation_id can only be published
+      // once, so a retry can never duplicate the post. Container status
+      // polling is not an option: status_code does not exist as a field on
+      // graph.threads.net container nodes.
+      const publishPath = `/${uid}/threads_publish?creation_id=${encodeURIComponent(containerId)}`;
+      let pub: ProviderResponse | null = null;
+      for (let attempt = 0; attempt < 10 && !pub; attempt++) {
+        let resp: ProviderResponse;
+        try {
+          resp = await httpJson(`${GRAPH}${publishPath}`, {
+            method: 'POST',
+            headers: { authorization: `Bearer ${secrets[0] ?? ''}` },
+            body: new URLSearchParams(),
+          });
+        } catch (netErr) {
+          if (attempt === 9) throw netErr;
+          await new Promise((r) => setTimeout(r, 3000));
+          continue;
+        }
+        if (resp.ok) {
+          pub = resp;
+          break;
+        }
+        const pErr = (resp.data as { error?: { code?: number } } | null)?.error;
+        if (pErr?.code !== 24) {
+          // A real rejection, not the processing race: run the full failure
+          // diagnostics once (this.post throws with the humanized error).
+          await this.post(env, secrets, publishPath, new URLSearchParams());
+        }
+        if (attempt < 9) await new Promise((r) => setTimeout(r, 3000));
+      }
+      if (!pub) {
+        throw failRetryable(secrets, 'CONTAINER_PROCESSING', 'Threads is still processing this post. Cotly will retry automatically.');
+      }
       const publishedId = requireId(pub, secrets, 'Threads publish');
       console.log('[threads-publish] publish accepted, remote id', publishedId.slice(0, 8) + '…');
-      // The container id doubles as the post id for text posts and is what
-      // resolvePending polls until FINISHED.
-      return { kind: 'pending', externalId: containerId, ...(pub.raw ? { raw: pub.raw } : {}) };
+      // threads_publish returns the id of the PUBLISHED media (distinct from
+      // the container); resolvePending polls that node for its permalink.
+      return { kind: 'pending', externalId: publishedId, ...(pub.raw ? { raw: pub.raw } : {}) };
     } catch (e) {
       return outcomeFromError(e);
     }
   }
 
+  // The published media node exposes its permalink once Threads finishes
+  // registering it; polling that single field avoids container status fields
+  // (status_code does not exist on graph.threads.net). Until the permalink
+  // appears the outcome stays pending — the engine's 24h cap catches
+  // permalinks that never materialize.
   async resolvePending(env: Env, account: SocialAccountRecord, externalId: string): Promise<PublishOutcome> {
     const secrets = secretsOf(env, account.accessToken);
     try {
-      const resp = await httpJson(`${GRAPH}/${externalId}?fields=status_code,status,error_message,permalink`, {
+      const resp = await httpJson(`${GRAPH}/${externalId}?fields=permalink`, {
         headers: { authorization: `Bearer ${secrets[0] ?? ''}` },
       });
-      if (!resp.ok) throw graphError(resp, secrets, 'Threads');
-      const data = (resp.data ?? {}) as { status_code?: string; status?: string; error_message?: string; permalink?: string };
-      const status = data.status_code ?? data.status ?? '';
-      if (status === 'FINISHED') {
-        return {
-          kind: 'confirmed',
-          externalId,
-          ...(data.permalink ? { permalink: data.permalink } : {}),
-          ...(resp.raw ? { raw: resp.raw } : {}),
-        };
-      }
-      if (status === 'ERROR' || status === 'EXPIRED' || data.error_message) {
-        throw fail(secrets, 'CONTAINER_ERROR', data.error_message || 'Threads failed to process this post.', resp.raw);
+      if (resp.ok) {
+        const permalink = (resp.data as { permalink?: string } | null)?.permalink;
+        if (permalink) {
+          return { kind: 'confirmed', externalId, permalink, ...(resp.raw ? { raw: resp.raw } : {}) };
+        }
       }
       return { kind: 'pending', externalId };
     } catch (e) {
       return outcomeFromError(e);
+    }
+  }
+
+  // Exchanges a still-valid short-lived token for the long-lived one and
+  // persists the upgrade. No-op when the stored token is already long-lived
+  // (expiry more than 2h out) or the exchange is rejected.
+  private async upgradeShortToken(env: Env, account: SocialAccountRecord, secrets: Secrets): Promise<void> {
+    const nowS = Math.floor(Date.now() / 1000);
+    if (account.tokenExpiresAt === undefined || account.tokenExpiresAt - nowS >= 7200) return;
+    try {
+      const upgraded = await this.exchangeLongLived(env, account.accessToken);
+      if (!upgraded) return;
+      secrets[0] = upgraded.accessToken;
+      const enc = await encryptSecret(env.ENCRYPTION_SECRET, upgraded.accessToken);
+      await env.DB
+        .prepare(`UPDATE social_accounts SET access_token_enc = ?, token_expires_at = ?, status = 'connected', updated_at = ? WHERE id = ?`)
+        .bind(enc, upgraded.expiresAt ?? null, nowS, account.id)
+        .run();
+      console.log('[threads-publish] short token upgraded to long-lived, expires in', upgraded.expiresIn ?? 'unknown');
+    } catch (e) {
+      console.log('[threads-publish] token upgrade skipped:', redact(String(e), secrets).slice(0, 160));
     }
   }
 
@@ -236,24 +324,64 @@ export class ThreadsAdapter implements PlatformAdapter {
       body,
     });
     if (!resp.ok) {
-      // Decisive diagnostic: what did Meta actually grant this token?
+      // Decisive diagnostic 1: does the token still pass a basic GET right
+      // before the publish POST? If /me works but threads_media does not, the
+      // token is valid and threads_basic is present — the failure is about the
+      // publish permission, not the token itself.
+      try {
+        const me = await httpJson(`${GRAPH}/me?fields=id,username`, { headers: { authorization: `Bearer ${secrets[0] ?? ''}` } });
+        const meData = (me.data ?? {}) as { id?: string; username?: string };
+        console.log('[threads-publish] pre-publish /me', {
+          ok: me.ok,
+          idSuffix: typeof meData.id === 'string' ? `…${meData.id.slice(-6)}` : null,
+          username: meData.username ?? null,
+          metaErrorCode: (me.data as { error?: { code?: number } } | null)?.error?.code ?? null,
+        });
+      } catch (meErr) {
+        console.log('[threads-publish] pre-publish /me unavailable:', redact(String(meErr), secrets).slice(0, 160));
+      }
+      // Decisive diagnostic 2: what did Meta actually grant this token? The
+      // official debugger lives on graph.facebook.com and accepts the Threads
+      // app's own app token; graph.threads.net rejects it.
       try {
         const appToken = `${env.THREADS_CLIENT_ID ?? ''}|${env.THREADS_CLIENT_SECRET ?? ''}`;
         const dbg = await httpJson(
-          `${GRAPH.replace('/v1.0', '')}/debug_token?input_token=${encodeURIComponent(secrets[0] ?? '')}&access_token=${encodeURIComponent(appToken)}`,
+          `https://graph.facebook.com/debug_token?input_token=${encodeURIComponent(secrets[0] ?? '')}&access_token=${encodeURIComponent(appToken)}`,
         );
         const d = (dbg.data as { data?: Record<string, unknown> } | null)?.data ?? {};
         console.log('[threads-publish] debug_token', {
           isValid: d.is_valid,
           tokenType: d.type,
           appIdSuffix: `…${String(d.app_id ?? '').slice(-4)}`,
-          userId: d.user_id,
+          userIdSuffix: typeof d.user_id === 'string' ? `…${String(d.user_id).slice(-6)}` : null,
           scopes: d.scopes,
           expiresAt: d.expires_at,
           debugError: (dbg.data as { error?: unknown } | null)?.error,
         });
       } catch (dbgErr) {
         console.log('[threads-publish] debug_token unavailable:', redact(String(dbgErr), secrets).slice(0, 160));
+      }
+      // Decisive diagnostic 3: is the publish edge reachable at all? With
+      // threads_content_publish granted, Meta validates params (bogus
+      // media_type => param error); without it, the node is masked and every
+      // POST returns the same 100/33. Only the error shape is logged.
+      const uidFromPath = (path.split('?')[0] ?? path).split('/')[1] ?? 'unknown';
+      for (const probe of [`/${uidFromPath}/threads?media_type=BOGUS&text=probe`, `/${uidFromPath}/threads_publish`]) {
+        try {
+          const pr = await httpJson(`${GRAPH}${probe}`, {
+            method: 'POST',
+            headers: { authorization: `Bearer ${secrets[0] ?? ''}` },
+            body: new URLSearchParams(),
+          });
+          const pe = (pr.data as { error?: { code?: number; message?: string; error_subcode?: number } } | null)?.error;
+          console.log('[threads-publish] edge probe', probe.split('?')[0], '=>', pr.ok ? `SUCCESS http ${pr.status}` : {
+            code: pe?.code ?? null,
+            subcode: pe?.error_subcode ?? null,
+            message: redact(String(pe?.message ?? ''), secrets).slice(0, 120),
+          });
+        } catch (probeErr) {
+          console.log('[threads-publish] edge probe', probe.split('?')[0], 'unavailable:', redact(String(probeErr), secrets).slice(0, 160));
+        }
       }
       const err = (resp.data as { error?: { code?: number; message?: string; error_subcode?: number } } | null)?.error;
       console.log('[threads-publish] graph call failed', {
