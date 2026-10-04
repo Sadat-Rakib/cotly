@@ -235,7 +235,17 @@ export class ThreadsAdapter implements PlatformAdapter {
       headers: { authorization: `Bearer ${secrets[0] ?? ''}` },
       body,
     });
-    if (!resp.ok) throw graphError(resp, secrets, 'Threads');
+    if (!resp.ok) {
+      const err = (resp.data as { error?: { code?: number; message?: string; error_subcode?: number } } | null)?.error;
+      console.log('[threads-publish] graph call failed', {
+        httpStatus: resp.status,
+        metaErrorCode: err?.code ?? null,
+        metaErrorSubcode: err?.error_subcode ?? null,
+        metaErrorMessage: redact(String(err?.message ?? ''), secrets),
+        endpoint: path.split('?')[0],
+      });
+      throw graphError(resp, secrets, 'Threads');
+    }
     return resp;
   }
 }
