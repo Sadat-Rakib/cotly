@@ -6,8 +6,12 @@
   font-family: 'Instrument Serif', serif;
 }
 
-/* Auth inputs: keep Chrome autofill readable on the dark card (white text on
-   the same dark fill instead of the default pale autofill). */
+/* Preflight is off, so restore the resets it would normally provide for the
+   dark Tailwind surfaces: transparent buttons and readable autofill. */
+button {
+  background-color: transparent;
+}
+
 input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus {
