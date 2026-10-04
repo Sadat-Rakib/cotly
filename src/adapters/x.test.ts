@@ -84,7 +84,7 @@ describe('X adapter', () => {
     expect(auth.url).toContain('https://x.com/i/oauth2/authorize');
     expect(auth.url).toContain('client_id=x-client-id');
     expect(auth.url).toContain('code_challenge_method=S256');
-    expect(auth.url).toContain('scope=tweet.read%20tweet.write%20users.read%20offline.access');
+    expect(auth.url).toContain('scope=tweet.read%20tweet.write%20users.read%20media.write%20offline.access');
     expect(auth.verifier).toMatch(/^[A-Za-z0-9_-]{43,}$/);
   });
 
