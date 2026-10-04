@@ -300,7 +300,12 @@ async function pagePickUserToken(req: Request, env: Env): Promise<{ userToken: s
 // the Threads app secret; the matching Threads connection (its encrypted
 // tokens) is deleted immediately.
 export async function threadsDeauthorize(req: Request, env: Env): Promise<Response> {
-  const raw = await req.text();
+  let raw = '';
+  try {
+    raw = await req.text();
+  } catch {
+    raw = '';
+  }
   if (!raw) throw new HttpError(400, 'Missing signed_request payload.');
   const signed = String(new URLSearchParams(raw).get('signed_request') ?? '');
   if (!signed) throw new HttpError(400, 'Missing signed_request payload.');
