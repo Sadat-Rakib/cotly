@@ -112,75 +112,31 @@ const rise = (delay = 0, y = 16) => ({
   transition: { duration: 0.7, ease: EASE, delay },
 });
 
-// One huge faded phrase drifting across the sky. Two copies per track make the
-// -50% translate loop seamless; the row is decorative and hidden from a11y.
-// With `half`, the track anchors to one side so a pair can flank the hero
-// visual from opposite edges (POST ONCE. | GET ON WITH YOUR DAY.).
-function GhostWords({
-  phrase,
-  side,
-  size,
-  half = false,
-}: {
-  phrase: string;
-  side: 'left' | 'right';
-  size: string;
-  half?: boolean;
-}) {
+// One giant atmospheric phrase anchored to one edge, oscillating slowly and
+// smoothly (no marquee reset). Decorative only; movement respects
+// prefers-reduced-motion via CSS.
+function GhostLine({ phrase, side }: { phrase: string; side: 'left' | 'right' }) {
   return (
-    <div
-      className={`ghost-words ghost-${side} ${size} ${half ? `ghost-half-${side}` : ''}`}
-      aria-hidden="true"
-    >
-      <div className="ghost-track">
-        {[0, 1].map((i) => (
-          <span key={i} className="ghost-word">
-            {phrase}
-          </span>
-        ))}
-      </div>
+    <div className={`ghost-line ghost-${side}`} aria-hidden="true">
+      <span>{phrase}</span>
     </div>
   );
 }
 
-// Clouds and soft 3D orbs rendered as pure CSS — no image assets, always crisp.
-function SkyScene() {
-  return (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
-      <div className="sky-cloud w-[420px] h-[180px] top-[6%] left-[4%] opacity-80" />
-      <div className="sky-cloud w-[340px] h-[150px] top-[16%] right-[6%] opacity-70" />
-      <div className="sky-cloud w-[520px] h-[220px] top-[42%] left-[-6%] opacity-60" />
-      <div className="sky-cloud w-[380px] h-[170px] top-[64%] right-[10%] opacity-50" />
-      <div className="sky-cloud w-[460px] h-[200px] top-[86%] left-[24%] opacity-60" />
-      <div className="sky-orb w-16 h-16 top-[12%] left-[16%] sky-float" />
-      <div className="sky-orb sky-orb-rose w-10 h-10 top-[30%] right-[18%] sky-float-slow" />
-      <div className="sky-orb w-7 h-7 top-[58%] left-[8%] sky-float-slow" />
-      <div className="sky-orb sky-orb-rose w-12 h-12 top-[78%] right-[8%] sky-float" />
-    </div>
-  );
-}
-
-// The hero centerpiece: a generated 3D scene (projector device + holographic
-// compose screen) as a feathered WebP cutout floating on the coded sky. The
-// huge faded words flank it from opposite edges, drifting in opposite
-// directions; the handwritten note is coded text, not baked pixels.
+// The hero centerpiece: the supplied holographic projector render (with its
+// own clean alpha), floating gently over the supplied sky. Width capped per
+// spec; the soft glow follows the asset's alpha shape.
 function HeroVisual() {
   return (
-    <div className="relative max-w-4xl mx-auto px-4">
-      <div className="absolute inset-x-0 -top-10 md:-top-16" aria-hidden="true">
-        <GhostWords phrase="POST ONCE." side="left" half size="text-[15vw] md:text-[9rem]" />
-        <GhostWords phrase="GET ON WITH YOUR DAY." side="right" half size="text-[8vw] md:text-[4.6rem] top-6 md:top-10" />
-      </div>
-
+    <div className="relative mx-auto w-[min(100%,680px)] md:w-[min(88%,740px)] lg:w-[min(78%,780px)]">
       <motion.img
         initial={{ opacity: 0, y: 48 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.9, ease: EASE, delay: 0.45 }}
         src="/brand/hero-device.webp"
-        alt=""
-        aria-hidden="true"
+        alt="Cotly social publishing dashboard illustration"
         draggable={false}
-        className="relative z-10 w-full h-auto select-none sky-float-slow hero-glow"
+        className="relative z-10 w-full h-auto select-none hero-float hero-glow"
       />
 
       <motion.div
@@ -188,7 +144,7 @@ function HeroVisual() {
         animate={{ opacity: 1 }}
         transition={{ duration: 0.8, ease: EASE, delay: 1 }}
         aria-hidden="true"
-        className="hidden lg:block absolute z-10 right-[-2.5rem] top-[38%] -rotate-6 text-right"
+        className="hidden lg:block absolute z-10 -right-16 xl:-right-24 top-[34%] -rotate-6 text-right"
       >
         <p className="font-hand text-[#4a44c9] text-2xl leading-tight drop-shadow-[0_2px_6px_rgba(255,255,255,0.55)]">
           Write once.
@@ -252,8 +208,8 @@ export function Landing({ navigate, authed }: Props) {
           scrolled ? 'bg-white/25 backdrop-blur-xl border-b border-white/40' : 'bg-transparent'
         }`}
       >
-        <div className="max-w-[1440px] mx-auto px-6 md:px-10 lg:px-28 flex items-center justify-between h-16 md:py-5 md:h-auto">
-          <a href="/" onClick={goto('/')} className="no-underline text-[#1e1b4b]">
+        <div className="max-w-[1240px] mx-auto px-6 md:px-10 flex items-center justify-between h-16 md:py-5 md:h-auto">
+          <a href="/" onClick={goto('/')} className="no-underline text-white">
             <Logo markClass="w-6 h-6" wordClass="text-xl font-semibold tracking-tight" />
           </a>
 
@@ -263,7 +219,7 @@ export function Landing({ navigate, authed }: Props) {
                 key={l.href}
                 href={l.href}
                 onClick={l.onClick}
-                className="no-underline text-sm font-medium text-[#1e1b4b]/60 hover:text-[#1e1b4b] transition-colors"
+                className="no-underline text-sm font-medium text-white/70 hover:text-white transition-colors"
               >
                 {l.label}
               </a>
@@ -274,9 +230,9 @@ export function Landing({ navigate, authed }: Props) {
             <motion.a
               href={cta.href}
               onClick={goto(cta.href)}
-              whileHover={{ scale: 1.03 }}
+              whileHover={{ scale: 1.03, y: -1 }}
               whileTap={{ scale: 0.98 }}
-              className="hidden md:inline-flex md:items-center md:gap-1.5 no-underline bg-white text-[#1e1b4b] text-sm font-semibold rounded-full px-5 py-2 shadow-lg shadow-[#5b6cf5]/25 hover:bg-white/90 transition-colors"
+              className="hidden md:inline-flex md:items-center md:gap-1.5 no-underline bg-white/95 text-[#1e1b4b] text-sm font-semibold rounded-full px-5 py-2 shadow-lg shadow-[#232671]/30 hover:bg-white hover:shadow-xl hover:shadow-[#232671]/40 transition-all"
             >
               {cta.label}
               <ArrowRight className="w-4 h-4" aria-hidden="true" />
@@ -289,11 +245,11 @@ export function Landing({ navigate, authed }: Props) {
             >
               <span className="sr-only">Menu</span>
               <span
-                className="w-6 h-[2px] bg-[#1e1b4b] transition-transform duration-500"
+                className="w-6 h-[2px] bg-white transition-transform duration-500"
                 style={{ transform: menuOpen ? 'translateY(4px) rotate(45deg)' : 'none' }}
               />
               <span
-                className="w-6 h-[2px] bg-[#1e1b4b] transition-transform duration-500"
+                className="w-6 h-[2px] bg-white transition-transform duration-500"
                 style={{ transform: menuOpen ? 'translateY(-4px) rotate(-45deg)' : 'none' }}
               />
             </button>
@@ -312,8 +268,10 @@ export function Landing({ navigate, authed }: Props) {
             key={l.label}
             href={l.href}
             onClick={l.onClick}
-            className={`font-instrument no-underline text-[#1e1b4b] text-4xl hover:opacity-60 ${
-              l.cta ? 'text-2xl mt-4 bg-white rounded-full px-8 py-3 shadow-xl' : ''
+            className={`font-instrument no-underline text-4xl hover:opacity-70 drop-shadow ${
+              l.cta
+                ? 'text-2xl mt-4 bg-white text-[#1e1b4b] rounded-full px-8 py-3 shadow-xl'
+                : 'text-white'
             }`}
           >
             {l.label}
@@ -322,19 +280,36 @@ export function Landing({ navigate, authed }: Props) {
       </div>
 
         {/* ================= Hero ================= */}
-        <section className="relative w-full overflow-hidden pt-32 md:pt-40 pb-20 md:pb-24">
-          <SkyScene />
+        <section className="relative w-full overflow-hidden min-h-[100svh] flex flex-col">
+          {/* Layer 1-2: supplied sky background + subtle contrast overlay.
+              The image is masked out at the bottom so the page gradient shows
+              through — no seam into the next section. */}
+          <div className="absolute inset-0 z-0" aria-hidden="true">
+            <img
+              src="/brand/hero-sky.webp"
+              alt=""
+              className="w-full h-full object-cover object-center hero-sky-fade"
+              draggable={false}
+            />
+            <div className="absolute inset-x-0 top-0 h-[38%] bg-gradient-to-b from-[#1e1b4b]/25 via-[#1e1b4b]/8 to-transparent" />
+          </div>
 
-          <div className="relative text-center px-6 max-w-4xl mx-auto">
+          {/* Layer 3: giant animated background typography. */}
+          <div className="absolute inset-x-0 top-[41%] md:top-[44%] z-[1]">
+            <GhostLine phrase="POST ONCE." side="left" />
+            <GhostLine phrase="GET ON WITH YOUR DAY." side="right" />
+          </div>
+
+          <div className="relative z-10 text-center px-6 max-w-4xl mx-auto pt-32 md:pt-40">
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, ease: EASE }}
-              className="inline-flex items-center gap-2.5 liquid-glass rounded-full pl-3 pr-4 py-1.5"
+              className="inline-flex items-center gap-2 liquid-glass rounded-full pl-3 pr-3.5 py-1.5"
             >
-              <Sparkles className="w-3.5 h-3.5 text-white/90" aria-hidden="true" />
-              <span className="text-white text-sm font-medium drop-shadow">20+ platforms supported</span>
-              <span className="flex items-center gap-1 ml-0.5">
+              <Sparkles className="w-3.5 h-3.5 shrink-0 text-white/90" aria-hidden="true" />
+              <span className="text-white text-[13px] md:text-sm font-medium whitespace-nowrap drop-shadow">20+ platforms supported</span>
+              <span className="flex items-center gap-1 shrink-0">
                 {BADGE_PLATFORMS.map(({ label, icon: Icon, className }) => (
                   <span
                     key={label}
@@ -351,7 +326,7 @@ export function Landing({ navigate, authed }: Props) {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, ease: EASE, delay: 0.1 }}
-              className="font-instrument text-white text-6xl md:text-8xl leading-[0.95] mt-8 drop-shadow-[0_10px_30px_rgba(30,27,75,0.25)]"
+              className="font-instrument text-white text-[46px] md:text-[64px] lg:text-[84px] leading-[1.04] mt-8 drop-shadow-[0_10px_30px_rgba(30,27,75,0.25)]"
             >
               Post once.
               <br />
@@ -362,7 +337,7 @@ export function Landing({ navigate, authed }: Props) {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, ease: EASE, delay: 0.2 }}
-              className="text-white/85 text-base md:text-lg mt-6 max-w-xl mx-auto drop-shadow"
+              className="text-white/85 text-[17px] md:text-[19px] mt-6 max-w-[620px] mx-auto drop-shadow"
             >
               Write your post, add your media, choose your accounts, and let Cotly handle the publishing for you.
             </motion.p>
@@ -376,9 +351,9 @@ export function Landing({ navigate, authed }: Props) {
               <motion.a
                 href={cta.href}
                 onClick={goto(cta.href)}
-                whileHover={{ scale: 1.04 }}
-                whileTap={{ scale: 0.97 }}
-                className="inline-flex items-center gap-2 no-underline bg-white text-[#1e1b4b] rounded-full px-8 py-3.5 text-sm md:text-base font-semibold shadow-xl shadow-[#5b6cf5]/40 hover:shadow-2xl hover:shadow-[#5b6cf5]/50 transition-shadow"
+                whileHover={{ scale: 1.03, y: -2 }}
+                whileTap={{ scale: 0.98 }}
+                className="inline-flex items-center gap-2 no-underline bg-white text-[#1e1b4b] rounded-full px-9 py-4 text-sm md:text-base font-semibold shadow-xl shadow-[#3a2f9e]/40 hover:shadow-2xl hover:shadow-[#3a2f9e]/55 transition-shadow"
               >
                 Start posting
                 <ArrowRight className="w-4 h-4" aria-hidden="true" />
@@ -387,8 +362,8 @@ export function Landing({ navigate, authed }: Props) {
             </motion.div>
           </div>
 
-          {/* Floating Cotly hero visual with flanking background words */}
-          <div className="relative max-w-5xl mx-auto mt-14 md:mt-20">
+          {/* Layer 4: the holographic centerpiece, integrated into the sky. */}
+          <div className="relative z-10 mx-auto mt-14 md:mt-20 pb-10 md:pb-16">
             <HeroVisual />
           </div>
         </section>

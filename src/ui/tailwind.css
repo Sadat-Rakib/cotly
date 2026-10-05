@@ -91,72 +91,88 @@ input:-webkit-autofill:focus {
     0 18px 40px -10px rgba(214, 51, 158, 0.35);
 }
 
-/* Gentle perpetual float for decorative objects. */
+/* Gentle perpetual float for decorative objects and the hero centerpiece. */
 @keyframes cotly-float {
   0%, 100% { transform: translateY(0px); }
   50% { transform: translateY(-14px); }
 }
+@keyframes cotly-float-soft {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-8px); }
+}
 .sky-float { animation: cotly-float 7s ease-in-out infinite; }
 .sky-float-slow { animation: cotly-float 11s ease-in-out infinite; }
-
-/* Huge faded background typography, drifting horizontally. The track holds
-   two copies of the phrase so the -50% loop is seamless. */
-.ghost-words {
-  position: absolute;
-  left: 0;
-  right: 0;
-  overflow: hidden;
-  pointer-events: none;
-  user-select: none;
-  -webkit-mask-image: linear-gradient(90deg, transparent, black 12%, black 88%, transparent);
-  mask-image: linear-gradient(90deg, transparent, black 12%, black 88%, transparent);
-}
-.ghost-track {
-  display: flex;
-  width: max-content;
-  will-change: transform;
-}
-@keyframes cotly-marquee-left {
-  from { transform: translateX(0); }
-  to { transform: translateX(-50%); }
-}
-@keyframes cotly-marquee-right {
-  from { transform: translateX(-50%); }
-  to { transform: translateX(0); }
-}
-.ghost-left .ghost-track { animation: cotly-marquee-left 64s linear infinite; }
-.ghost-right .ghost-track { animation: cotly-marquee-right 78s linear infinite; }
-.ghost-word {
-  font-family: 'Instrument Serif', serif;
-  text-transform: uppercase;
-  line-height: 0.9;
-  color: rgba(255, 255, 255, 0.16);
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-  padding-right: 0.6em;
-}
-
-/* Half-width anchored variants so a pair of tracks can flank the hero visual
-   from opposite edges (base .ghost-words spans left:0;right:0, which would
-   over-constrain a 50% width). */
-.ghost-half-left { left: 0; right: auto; width: 50%; }
-.ghost-half-right { left: auto; right: 0; width: 50%; }
+.hero-float { animation: cotly-float-soft 6s ease-in-out infinite; }
 
 /* Handwritten annotation next to the hero visual. */
 .font-hand {
   font-family: 'Caveat', 'Segoe Script', cursive;
 }
 
-/* Soft colored glow that follows the hero cutout's feathered alpha. */
+/* Giant atmospheric background typography. Single phrases anchored to one
+   viewport edge, drifting a short distance back and forth (alternate) so there
+   is never a visible reset. Purely decorative. */
+.ghost-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  line-height: 0.9;
+  -webkit-mask-image: linear-gradient(90deg, transparent, black 6%, black 94%, transparent);
+  mask-image: linear-gradient(90deg, transparent, black 6%, black 94%, transparent);
+}
+.ghost-line span {
+  display: inline-block;
+  white-space: nowrap;
+  font-family: 'Anton', 'Arial Narrow', sans-serif;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.015em;
+  line-height: 0.9;
+  color: rgba(255, 255, 255, 0.22);
+  will-change: transform;
+}
+.ghost-left span {
+  margin-left: -0.22em;
+  font-size: clamp(64px, 12vw, 176px);
+  animation: cotly-drift-left 16s ease-in-out infinite alternate;
+}
+.ghost-right span {
+  float: right;
+  margin-right: -0.18em;
+  font-size: clamp(40px, 8.2vw, 128px);
+  animation: cotly-drift-right 19s ease-in-out infinite alternate;
+}
+@keyframes cotly-drift-left {
+  from { transform: translateX(-2.5%); }
+  to { transform: translateX(3.5%); }
+}
+@keyframes cotly-drift-right {
+  from { transform: translateX(2.5%); }
+  to { transform: translateX(-3.5%); }
+}
+
+
+/* Soft colored glow that follows the centerpiece's alpha shape. */
 .hero-glow {
-  filter: drop-shadow(0 34px 60px rgba(76, 61, 191, 0.32));
+  filter: drop-shadow(0 30px 55px rgba(58, 47, 158, 0.35));
+}
+
+/* Hero background dissolves into the page gradient near the bottom — the
+   next section blends without any seam. */
+.hero-sky-fade {
+  -webkit-mask-image: linear-gradient(180deg, black 0%, black 74%, transparent 99%);
+  mask-image: linear-gradient(180deg, black 0%, black 74%, transparent 99%);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ghost-left .ghost-track,
-  .ghost-right .ghost-track,
+  .ghost-left span,
+  .ghost-right span,
   .sky-float,
-  .sky-float-slow { animation: none; }
+  .sky-float-slow,
+  .hero-float { animation: none; }
 }
 
 /* Liquid glass pill (kept from V2 — used for small chips on the sky). */
