@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactElement } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
-import { ArrowRight, MoreHorizontal, Sparkles } from 'lucide-react';
+import { ArrowRight, Sparkles } from 'lucide-react';
 import { Logo, LogoMark } from '../components/Logo';
 
 // lucide-react v1 dropped brand icons, so the badge carries its own tiny marks.
@@ -80,7 +80,7 @@ const QUEUE_ROWS: Array<{
     date: 'Oct 4',
     time: '9:30 AM',
     status: 'Scheduled',
-    thumb: 'from-[#c4a9f5] to-[#f3cce8]',
+    thumb: '/brand/queue-thumb-2.webp',
   },
   {
     post: 'Behind the scenes',
@@ -89,7 +89,7 @@ const QUEUE_ROWS: Array<{
     date: 'Oct 4',
     time: '1:00 PM',
     status: 'Scheduled',
-    thumb: 'from-[#9ecbff] to-[#c4a9f5]',
+    thumb: '/brand/queue-thumb-4.webp',
   },
   {
     post: 'Launch walkthrough',
@@ -98,7 +98,7 @@ const QUEUE_ROWS: Array<{
     date: 'Oct 5',
     time: '10:00 AM',
     status: 'Preparing',
-    thumb: 'from-[#f3cce8] to-[#fbe8d0]',
+    thumb: '/brand/queue-thumb-1.webp',
   },
   {
     post: 'Weekend update',
@@ -107,7 +107,7 @@ const QUEUE_ROWS: Array<{
     date: 'Oct 5',
     time: '4:30 PM',
     status: 'Scheduled',
-    thumb: 'from-[#b8e3ff] to-[#d9c8ff]',
+    thumb: '/brand/queue-thumb-3.webp',
   },
 ];
 
@@ -133,17 +133,6 @@ const rise = (delay = 0, y = 16) => ({
   viewport: { once: true, margin: '-60px' },
   transition: { duration: 0.7, ease: EASE, delay },
 });
-
-// One giant atmospheric phrase anchored to one edge, oscillating slowly and
-// smoothly (no marquee reset). Decorative only; movement respects
-// prefers-reduced-motion via CSS.
-function GhostLine({ phrase, side }: { phrase: string; side: 'left' | 'right' }) {
-  return (
-    <div className={`ghost-line ghost-${side}`} aria-hidden="true">
-      <span>{phrase}</span>
-    </div>
-  );
-}
 
 // The hero centerpiece: the supplied holographic projector render (with its
 // own clean alpha), floating gently over the supplied sky. Width capped per
@@ -227,11 +216,13 @@ export function Landing({ navigate, authed }: Props) {
       {/* ================= Navbar ================= */}
       <header
         className={`fixed top-0 left-0 w-full z-50 transition-all duration-500 ${
-          scrolled ? 'bg-white/25 backdrop-blur-xl border-b border-white/40' : 'bg-transparent'
+          scrolled
+            ? 'bg-white/75 backdrop-blur-xl border-b border-[#1e1b4b]/10 shadow-sm'
+            : 'bg-transparent'
         }`}
       >
         <div className="max-w-[1240px] mx-auto px-6 md:px-10 flex items-center justify-between h-16 md:py-5 md:h-auto">
-          <a href="/" onClick={goto('/')} className="no-underline text-white">
+          <a href="/" onClick={goto('/')} className={`no-underline transition-colors ${scrolled ? 'text-[#1e1b4b]' : 'text-white'}`}>
             <Logo markClass="w-6 h-6" wordClass="text-xl font-semibold tracking-tight" />
           </a>
 
@@ -241,7 +232,7 @@ export function Landing({ navigate, authed }: Props) {
                 key={l.href}
                 href={l.href}
                 onClick={l.onClick}
-                className="no-underline text-sm font-medium text-white/70 hover:text-white transition-colors"
+                className={`no-underline text-sm font-medium transition-colors ${scrolled ? 'text-[#1e1b4b]/70 hover:text-[#1e1b4b]' : 'text-white/75 hover:text-white'}`}
               >
                 {l.label}
               </a>
@@ -254,7 +245,7 @@ export function Landing({ navigate, authed }: Props) {
               onClick={goto(cta.href)}
               whileHover={{ scale: 1.03, y: -1 }}
               whileTap={{ scale: 0.98 }}
-              className="hidden md:inline-flex md:items-center md:gap-1.5 no-underline bg-white/95 text-[#1e1b4b] text-sm font-semibold rounded-full px-5 py-2 shadow-lg shadow-[#232671]/30 hover:bg-white hover:shadow-xl hover:shadow-[#232671]/40 transition-all"
+              className={`hidden md:inline-flex md:items-center md:gap-1.5 no-underline text-sm font-semibold rounded-full px-5 py-2 transition-all ${scrolled ? "bg-[#232671] text-white shadow-lg shadow-[#232671]/25 hover:bg-[#2d3090]" : "bg-white/95 text-[#1e1b4b] shadow-lg shadow-[#232671]/30 hover:bg-white hover:shadow-xl hover:shadow-[#232671]/40"}`}
             >
               {cta.label}
               <ArrowRight className="w-4 h-4" aria-hidden="true" />
@@ -267,11 +258,11 @@ export function Landing({ navigate, authed }: Props) {
             >
               <span className="sr-only">Menu</span>
               <span
-                className="w-6 h-[2px] bg-white transition-transform duration-500"
+                className={`w-6 h-[2px] transition-all duration-500 ${scrolled ? 'bg-[#1e1b4b]' : 'bg-white'}`}
                 style={{ transform: menuOpen ? 'translateY(4px) rotate(45deg)' : 'none' }}
               />
               <span
-                className="w-6 h-[2px] bg-white transition-transform duration-500"
+                className={`w-6 h-[2px] transition-all duration-500 ${scrolled ? 'bg-[#1e1b4b]' : 'bg-white'}`}
                 style={{ transform: menuOpen ? 'translateY(-4px) rotate(-45deg)' : 'none' }}
               />
             </button>
@@ -314,12 +305,6 @@ export function Landing({ navigate, authed }: Props) {
               draggable={false}
             />
             <div className="absolute inset-x-0 top-0 h-[38%] bg-gradient-to-b from-[#1e1b4b]/25 via-[#1e1b4b]/8 to-transparent" />
-          </div>
-
-          {/* Layer 3: giant animated background typography. */}
-          <div className="absolute inset-x-0 top-[41%] md:top-[44%] z-[1]">
-            <GhostLine phrase="POST ONCE." side="left" />
-            <GhostLine phrase="GET ON WITH YOUR DAY." side="right" />
           </div>
 
           <div className="relative z-10 text-center px-6 max-w-4xl mx-auto pt-32 md:pt-40">
@@ -380,7 +365,6 @@ export function Landing({ navigate, authed }: Props) {
                 Start posting
                 <ArrowRight className="w-4 h-4" aria-hidden="true" />
               </motion.a>
-              <span className="text-white/70 text-sm">Works with 20+ platforms — X, Threads, Instagram, Bluesky and more.</span>
             </motion.div>
           </div>
 
@@ -421,12 +405,11 @@ export function Landing({ navigate, authed }: Props) {
                 <span>Platforms</span>
                 <span>Scheduled</span>
                 <span>Status</span>
-                <span />
               </div>
               {QUEUE_ROWS.map((row) => (
                 <div key={row.post} className="queue-grid items-center px-7 py-5 border-t border-[#1e1b4b]/8">
                   <span className="flex items-center gap-3 min-w-0">
-                    <span className={`w-10 h-10 shrink-0 rounded-xl bg-gradient-to-br ${row.thumb} border border-white shadow-sm`} aria-hidden="true" />
+                    <img src={row.thumb} alt="" aria-hidden="true" draggable={false} className="w-10 h-10 shrink-0 rounded-xl object-cover border border-white shadow-sm" />
                     <span className="text-[#1e1b4b] font-semibold truncate">{row.post}</span>
                   </span>
                   <span className="text-[#1e1b4b]/60 text-sm truncate pr-4">{row.caption}</span>
@@ -441,11 +424,6 @@ export function Landing({ navigate, authed }: Props) {
                     <span className="text-[#1e1b4b]/50">{row.time}</span>
                   </span>
                   <span><StatusPill status={row.status} /></span>
-                  <span className="justify-self-end">
-                    <button type="button" aria-label={`More options for ${row.post}`} className="p-1.5 rounded-full text-[#1e1b4b]/40 hover:text-[#1e1b4b]/80 hover:bg-white/70 transition-colors">
-                      <MoreHorizontal className="w-[18px] h-[18px]" aria-hidden="true" />
-                    </button>
-                  </span>
                 </div>
               ))}
             </div>
@@ -455,7 +433,7 @@ export function Landing({ navigate, authed }: Props) {
               {QUEUE_ROWS.map((row) => (
                 <div key={row.post} className="glass-table p-5">
                   <div className="flex items-center gap-3">
-                    <span className={`w-10 h-10 shrink-0 rounded-xl bg-gradient-to-br ${row.thumb} border border-white shadow-sm`} aria-hidden="true" />
+                    <img src={row.thumb} alt="" aria-hidden="true" draggable={false} className="w-10 h-10 shrink-0 rounded-xl object-cover border border-white shadow-sm" />
                     <span className="text-[#1e1b4b] font-semibold flex-1 truncate">{row.post}</span>
                     <StatusPill status={row.status} />
                   </div>
@@ -493,12 +471,12 @@ export function Landing({ navigate, authed }: Props) {
             >
               Three steps. Then get on with <span className="italic">your day.</span>
             </motion.h2>
-            <div className="grid md:grid-cols-3 gap-5 md:gap-6 mt-14 md:mt-20">
+            <div className="grid md:grid-cols-3 gap-5 md:gap-6 mt-14 md:mt-20 items-stretch">
               {STEPS.map((s, i) => (
                 <motion.div
                   key={s.num}
                   {...rise(i * 0.12, 24)}
-                  className={`step-card relative text-center px-7 pt-8 pb-9 ${i === 1 ? 'md:mt-10' : ''}`}
+                  className="step-card relative flex h-full flex-col items-center justify-start text-center px-7 pt-8 pb-9"
                 >
                   <span className="step-num">{s.num}</span>
                   <img
@@ -525,7 +503,7 @@ export function Landing({ navigate, authed }: Props) {
           >
             Post it <span className="italic">once.</span>
           </motion.h2>
-          <motion.p {...rise(0.1)} className="text-[#1e1b4b]/70 mt-5 max-w-lg mx-auto">
+          <motion.p {...rise(0.1)} className="text-[#1e1b4b]/80 text-base md:text-lg mt-5 max-w-xl mx-auto">
             Your content has better things to do than sit in twelve different tabs.
           </motion.p>
           <motion.div {...rise(0.2)} className="mt-10">
@@ -550,12 +528,12 @@ export function Landing({ navigate, authed }: Props) {
               <span className="font-semibold tracking-tight">Cotly</span>
             </div>
             <nav className="flex items-center gap-6">
-              <a href="/terms" onClick={goto('/terms')} className="no-underline text-[#1e1b4b]/70 hover:text-[#1e1b4b] transition-colors">Terms</a>
-              <a href="/privacy" onClick={goto('/privacy')} className="no-underline text-[#1e1b4b]/70 hover:text-[#1e1b4b] transition-colors">Privacy</a>
-              <a href="mailto:hello@cotly.app" className="no-underline text-[#1e1b4b]/70 hover:text-[#1e1b4b] transition-colors">Contact</a>
+              <a href="/terms" onClick={goto('/terms')} className="no-underline text-[#1e1b4b]/80 hover:text-[#1e1b4b] text-[15px] transition-colors">Terms</a>
+              <a href="/privacy" onClick={goto('/privacy')} className="no-underline text-[#1e1b4b]/80 hover:text-[#1e1b4b] text-[15px] transition-colors">Privacy</a>
+              <a href="mailto:hello@cotly.app" className="no-underline text-[#1e1b4b]/80 hover:text-[#1e1b4b] text-[15px] transition-colors">Contact</a>
             </nav>
           </div>
-          <p className="text-center text-[#1e1b4b]/50 text-xs mt-7">© 2026 Cotly.</p>
+          <p className="text-center text-[#1e1b4b]/60 text-sm mt-8">© 2026 Cotly.</p>
         </footer>
       </div>
     </div>

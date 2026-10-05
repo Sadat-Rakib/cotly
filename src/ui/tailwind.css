@@ -230,7 +230,7 @@ input:-webkit-autofill:focus {
 }
 .queue-grid {
   display: grid;
-  grid-template-columns: 1.35fr 2fr 1.6fr 0.9fr auto 44px;
+  grid-template-columns: 1.35fr 2fr 1.6fr 0.9fr auto;
   gap: 16px;
 }
 .queue-grid + .queue-grid:hover,

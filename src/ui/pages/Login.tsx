@@ -8,22 +8,28 @@ interface Props {
   onNav: (p: string) => void;
 }
 
-// Shared sky-glass auth shell so login and signup visually match the landing page.
+// Shared sky-glass auth shell so login and signup visually match the landing page:
+// the same supplied cloudscape with a soft pastel glow behind the glass card.
 export function AuthShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="relative min-h-[100dvh] cotly-sky flex items-center justify-center px-6 py-16 overflow-hidden">
-      {/* Decorative sky scene — same clouds/orbs as the landing hero. */}
+      {/* Scenic sky background (same asset as the hero) + atmospheric glow. */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
-        <div className="sky-cloud w-[380px] h-[170px] top-[8%] left-[6%] opacity-70" />
-        <div className="sky-cloud w-[340px] h-[150px] top-[62%] right-[8%] opacity-60" />
-        <div className="sky-orb w-12 h-12 top-[16%] right-[16%] sky-float" />
-        <div className="sky-orb sky-orb-rose w-8 h-8 bottom-[14%] left-[14%] sky-float-slow" />
+        <img
+          src="/brand/hero-sky.webp"
+          alt=""
+          draggable={false}
+          className="absolute inset-0 w-full h-full object-cover object-center"
+        />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#1e1b4b]/15 via-transparent to-[#8b7cf0]/30" />
+        <div className="sky-orb w-14 h-14 top-[14%] right-[14%] sky-float" />
+        <div className="sky-orb sky-orb-rose w-9 h-9 bottom-[16%] left-[12%] sky-float-slow" />
       </div>
       {/* Back to the landing page — /login is often opened directly. */}
       <a
         href="/"
         aria-label="Back to Cotly"
-        className="absolute top-5 left-5 md:top-8 md:left-8 z-10 inline-flex items-center gap-2 no-underline text-[#1e1b4b]/70 hover:text-[#1e1b4b] text-sm rounded-lg px-3 py-2 border border-white/60 bg-white/30 hover:bg-white/50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1e1b4b]/50"
+        className="absolute top-5 left-5 md:top-8 md:left-8 z-10 inline-flex items-center gap-2 no-underline text-white/90 hover:text-white text-sm rounded-lg px-3 py-2 border border-white/50 bg-[#1e1b4b]/20 backdrop-blur-md hover:bg-[#1e1b4b]/35 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
       >
         <ArrowLeft className="w-4 h-4" />
         Back to Cotly

@@ -479,7 +479,8 @@ export function ProfilePage({ me, onLogout }: Props) {
           </select>
           <p className="hint">
             Uploaded media is automatically removed after 7 days unless you choose a shorter
-            retention period. Posts that were already published are never affected.
+            retention period. Posts that were already published are never affected, and storage
+            never grows endlessly — the scheduler cleans expired uploads automatically.
           </p>
         </div>
 
