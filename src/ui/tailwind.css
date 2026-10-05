@@ -6,8 +6,8 @@
   font-family: 'Instrument Serif', serif;
 }
 
-/* Preflight is off, so restore the resets it would normally provide for the
-   dark Tailwind surfaces: transparent buttons and readable autofill. */
+/* Preflight is off, so restore the resets it would normally provide:
+   transparent buttons and readable autofill on the light pastel surfaces. */
 button {
   background-color: transparent;
 }
@@ -15,61 +15,140 @@ button {
 input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus {
-  -webkit-text-fill-color: #ffffff;
-  -webkit-box-shadow: 0 0 0 1000px #141414 inset;
-  caret-color: #ffffff;
+  -webkit-text-fill-color: #1e1b4b;
+  -webkit-box-shadow: 0 0 0 1000px #f3efff inset;
+  caret-color: #1e1b4b;
   transition: background-color 9999s ease-out 0s;
 }
 
-/* Cotly V2 design tokens (dark theme). The app keeps its own sage variables. */
+/* Cotly pastel sky tokens (blue -> purple -> pink system). */
 :root {
-  --background: 0 0% 0%;
-  --foreground: 0 0% 100%;
-  --card: 0 0% 5%;
-  --card-foreground: 0 0% 100%;
-  --muted: 0 0% 9%;
-  --muted-foreground: 0 0% 65%;
-  --border: 0 0% 20%;
-  --input: 0 0% 15%;
-  --primary: 0 0% 100%;
-  --primary-foreground: 0 0% 0%;
-  --secondary: 0 0% 8%;
-  --secondary-foreground: 0 0% 100%;
-  --hero-subtitle: 210 17% 95%;
+  --sky-top: #5b6cf5;
+  --sky-mid: #8b7cf0;
+  --sky-lavender: #c4a9f5;
+  --sky-pink: #e3c4ee;
+  --sky-rose: #f3cce8;
+  --sky-peach: #fbe8d0;
+  --ink: #1e1b4b;
+  --ink-soft: rgba(30, 27, 75, 0.62);
+  --glass-fill: rgba(255, 255, 255, 0.55);
+  --glass-border: rgba(255, 255, 255, 0.65);
+  --glass-shadow: 0 24px 60px -12px rgba(91, 108, 245, 0.35);
 }
 
-/* Liquid glass, exactly per spec. */
-.liquid-glass {
-  background: rgba(255, 255, 255, 0.01);
-  background-blend-mode: luminosity;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  border: none;
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.1);
-  position: relative;
-  overflow: hidden;
+/* The full-page dreamy sky gradient shared by landing + auth. */
+.cotly-sky {
+  background:
+    linear-gradient(
+      180deg,
+      var(--sky-top) 0%,
+      var(--sky-mid) 28%,
+      var(--sky-lavender) 52%,
+      var(--sky-pink) 72%,
+      var(--sky-rose) 88%,
+      var(--sky-peach) 100%
+    );
 }
-.liquid-glass::before {
-  content: '';
+
+/* Frosted glass card on the sky. */
+.sky-glass {
+  background: var(--glass-fill);
+  backdrop-filter: blur(20px) saturate(1.35);
+  -webkit-backdrop-filter: blur(20px) saturate(1.35);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+}
+
+/* Soft CSS cloud: layered radial blobs, no image assets. */
+.sky-cloud {
   position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1.4px;
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.45) 0%,
-    rgba(255, 255, 255, 0.15) 20%,
-    rgba(255, 255, 255, 0) 40%,
-    rgba(255, 255, 255, 0) 60%,
-    rgba(255, 255, 255, 0.15) 80%,
-    rgba(255, 255, 255, 0.45) 100%
-  );
-  -webkit-mask:
-    linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
+  border-radius: 9999px;
+  background:
+    radial-gradient(closest-side, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0) 70%),
+    radial-gradient(closest-side at 30% 60%, rgba(255, 245, 252, 0.9), rgba(255, 255, 255, 0) 75%);
+  filter: blur(18px);
   pointer-events: none;
+}
+
+/* Soft 3D-ish sphere accents (purple / rose glass balls). */
+.sky-orb {
+  position: absolute;
+  border-radius: 9999px;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0) 42%),
+    radial-gradient(circle at 50% 50%, var(--sky-lavender), var(--sky-mid));
+  box-shadow:
+    inset -10px -14px 30px rgba(91, 108, 245, 0.45),
+    0 18px 40px -10px rgba(91, 108, 245, 0.45);
+}
+.sky-orb-rose {
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0) 42%),
+    radial-gradient(circle at 50% 50%, #fbd9ef, #ee9fd4);
+  box-shadow:
+    inset -10px -14px 30px rgba(214, 51, 158, 0.35),
+    0 18px 40px -10px rgba(214, 51, 158, 0.35);
+}
+
+/* Gentle perpetual float for decorative objects. */
+@keyframes cotly-float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-14px); }
+}
+.sky-float { animation: cotly-float 7s ease-in-out infinite; }
+.sky-float-slow { animation: cotly-float 11s ease-in-out infinite; }
+
+/* Huge faded background typography, drifting horizontally. The track holds
+   two copies of the phrase so the -50% loop is seamless. */
+.ghost-words {
+  position: absolute;
+  left: 0;
+  right: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  -webkit-mask-image: linear-gradient(90deg, transparent, black 12%, black 88%, transparent);
+  mask-image: linear-gradient(90deg, transparent, black 12%, black 88%, transparent);
+}
+.ghost-track {
+  display: flex;
+  width: max-content;
+  will-change: transform;
+}
+@keyframes cotly-marquee-left {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@keyframes cotly-marquee-right {
+  from { transform: translateX(-50%); }
+  to { transform: translateX(0); }
+}
+.ghost-left .ghost-track { animation: cotly-marquee-left 64s linear infinite; }
+.ghost-right .ghost-track { animation: cotly-marquee-right 78s linear infinite; }
+.ghost-word {
+  font-family: 'Instrument Serif', serif;
+  text-transform: uppercase;
+  line-height: 0.9;
+  color: rgba(255, 255, 255, 0.16);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  padding-right: 0.6em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ghost-left .ghost-track,
+  .ghost-right .ghost-track,
+  .sky-float,
+  .sky-float-slow { animation: none; }
+}
+
+/* Liquid glass pill (kept from V2 — used for small chips on the sky). */
+.liquid-glass {
+  background: rgba(255, 255, 255, 0.28);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.55);
 }
 
 /* Light sweep across a queue row as it comes alive. */
@@ -84,7 +163,7 @@ input:-webkit-autofill:focus {
   bottom: 0;
   left: 0;
   width: 40%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
   animation: cotly-sweep 1.6s cubic-bezier(0.16, 1, 0.3, 1) both;
   pointer-events: none;
 }

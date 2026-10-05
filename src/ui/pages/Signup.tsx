@@ -34,12 +34,12 @@ export function SignupPage({ onDone, onNav }: Props) {
 
   return (
     <AuthShell>
-      <h1 className="text-white text-2xl font-medium tracking-tight text-center mt-6">Create your Cotly account.</h1>
-      <p className="text-white/50 text-sm text-center mt-1.5">One place to write, schedule, and move on.</p>
+      <h1 className="text-[#1e1b4b] font-instrument text-3xl text-center mt-6">Create your Cotly account.</h1>
+      <p className="text-[#1e1b4b]/60 text-sm text-center mt-1.5">One place to write, schedule, and move on.</p>
 
       <form onSubmit={submit} className="mt-8 flex flex-col gap-4">
         <label className="block">
-          <span className="text-xs text-white/60">Name</span>
+          <span className="text-xs font-medium text-[#1e1b4b]/60">Name</span>
           <input
             className={`${inputClass} mt-1.5`}
             type="text"
@@ -50,7 +50,7 @@ export function SignupPage({ onDone, onNav }: Props) {
           />
         </label>
         <label className="block">
-          <span className="text-xs text-white/60">Email</span>
+          <span className="text-xs font-medium text-[#1e1b4b]/60">Email</span>
           <input
             className={`${inputClass} mt-1.5`}
             type="email"
@@ -62,11 +62,11 @@ export function SignupPage({ onDone, onNav }: Props) {
         </label>
         <div className="mt-0">
           <PasswordField value={password} onChange={setPassword} autoComplete="new-password" />
-          <span className="text-xs text-white/40 mt-1 block">At least 8 characters.</span>
+          <span className="text-xs text-[#1e1b4b]/40 mt-1 block">At least 8 characters.</span>
         </div>
 
         {err && (
-          <p className="text-sm text-red-300" role="alert">
+          <p className="text-sm text-red-700" role="alert">
             {err}
           </p>
         )}
@@ -74,7 +74,7 @@ export function SignupPage({ onDone, onNav }: Props) {
         <button
           type="submit"
           disabled={busy}
-          className="mt-1 w-full rounded-lg bg-white text-black text-sm font-semibold py-2.5 hover:bg-white/90 disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+          className="mt-1 w-full rounded-lg bg-[#232671] text-white text-sm font-semibold py-2.5 rounded-xl hover:bg-[#2d3090] shadow-lg shadow-[#232671]/30 disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5b6cf5]/60"
         >
           {busy ? 'Creating account…' : 'Create account'}
         </button>
@@ -88,7 +88,7 @@ export function SignupPage({ onDone, onNav }: Props) {
             e.preventDefault();
             onNav('/login');
           }}
-          className="text-white underline-offset-4 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60 rounded"
+          className="text-[#312e81] font-semibold underline-offset-4 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#5b6cf5]/60 rounded"
         >
           Sign in
         </a>
