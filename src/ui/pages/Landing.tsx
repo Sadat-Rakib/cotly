@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactElement } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
-import { ArrowRight, Sparkles } from 'lucide-react';
+import { ArrowRight, MoreHorizontal, Sparkles } from 'lucide-react';
 import { Logo, LogoMark } from '../components/Logo';
 
 // lucide-react v1 dropped brand icons, so the badge carries its own tiny marks.
@@ -62,45 +62,67 @@ interface Props {
 
 // Demo rows for the scheduling showcase. These demonstrate the product; they
 // are not testimonials and name no customers.
-const QUEUE_ROWS = [
+type DemoPlatform = 'x' | 'instagram' | 'tiktok' | 'youtube' | 'linkedin';
+
+const QUEUE_ROWS: Array<{
+  post: string;
+  caption: string;
+  platforms: DemoPlatform[];
+  date: string;
+  time: string;
+  status: 'Scheduled' | 'Preparing';
+  thumb: string;
+}> = [
   {
     post: 'Product launch',
-    caption: '"We\'ve been building something new. It\'s finally ready."',
-    platforms: ['X', 'Threads', 'LinkedIn'],
+    caption: '"We\'ve been building something new..."',
+    platforms: ['x', 'linkedin', 'youtube'],
     date: 'Oct 4',
     time: '9:30 AM',
-    status: 'Scheduled' as const,
+    status: 'Scheduled',
+    thumb: 'from-[#c4a9f5] to-[#f3cce8]',
   },
   {
     post: 'Behind the scenes',
-    caption: '"A quick look at what went into this week\'s release."',
-    platforms: ['Instagram', 'Threads'],
+    caption: '"A quick look at what went into this..."',
+    platforms: ['instagram', 'tiktok'],
     date: 'Oct 4',
     time: '1:00 PM',
-    status: 'Scheduled' as const,
+    status: 'Scheduled',
+    thumb: 'from-[#9ecbff] to-[#c4a9f5]',
   },
   {
     post: 'Launch walkthrough',
-    caption: '"Here\'s the full walkthrough."',
-    platforms: ['YouTube', 'TikTok'],
+    caption: '"Here\'s the full walkthrough!"',
+    platforms: ['youtube', 'x', 'linkedin'],
     date: 'Oct 5',
     time: '10:00 AM',
-    status: 'Preparing' as const,
+    status: 'Preparing',
+    thumb: 'from-[#f3cce8] to-[#fbe8d0]',
   },
   {
     post: 'Weekend update',
     caption: '"Everything we shipped this week."',
-    platforms: ['X', 'Bluesky', 'Mastodon'],
+    platforms: ['x', 'instagram'],
     date: 'Oct 5',
     time: '4:30 PM',
-    status: 'Scheduled' as const,
+    status: 'Scheduled',
+    thumb: 'from-[#b8e3ff] to-[#d9c8ff]',
   },
 ];
 
+const PLATFORM_META: Record<DemoPlatform, { label: string; icon: (p: { className?: string }) => ReactElement; chip: string }> = {
+  x: { label: 'X', icon: XIcon, chip: 'bg-[#0f1419] text-white' },
+  instagram: { label: 'Instagram', icon: InstagramIcon, chip: 'bg-gradient-to-br from-[#f9ce34] via-[#ee2a7b] to-[#6228d7] text-white' },
+  tiktok: { label: 'TikTok', icon: TikTokIcon, chip: 'bg-[#0f1419] text-white' },
+  youtube: { label: 'YouTube', icon: YouTubeIcon, chip: 'bg-[#ff0000] text-white' },
+  linkedin: { label: 'LinkedIn', icon: LinkedInIcon, chip: 'bg-[#0a66c2] text-white' },
+};
+
 const STEPS = [
-  { num: '01', title: 'Add your content', body: 'Write your caption and upload your image or video.' },
-  { num: '02', title: 'Choose your accounts', body: 'Select exactly where Cotly should publish it.' },
-  { num: '03', title: 'Choose the time', body: 'Publish now or schedule it for later.' },
+  { num: '01', title: 'Add your content', body: 'Write your caption and upload your image or video.', img: '/brand/clay-content.webp' },
+  { num: '02', title: 'Choose your accounts', body: 'Select exactly where Cotly should publish it.', img: '/brand/clay-platforms.webp' },
+  { num: '03', title: 'Choose the time', body: 'Publish now or schedule it for later.', img: '/brand/clay-time.webp' },
 ];
 
 const EASE = [0.16, 1, 0.3, 1] as const;
@@ -368,46 +390,49 @@ export function Landing({ navigate, authed }: Props) {
           </div>
         </section>
 
-      {/* ================= Content queue ================= */}
-      <section id="queue" className="relative py-24 md:py-32 px-6">
-        <div className="max-w-6xl mx-auto">
+      {/* ================= Everything lined up (ASSET 1 sky) ================= */}
+      <section id="queue" className="relative overflow-hidden">
+        <div className="absolute inset-0 z-0" aria-hidden="true">
+          <img
+            src="/brand/queue-sky.webp"
+            alt=""
+            draggable={false}
+            className="w-full h-full object-cover object-center section-sky-a"
+          />
+        </div>
+
+        <div className="relative z-10 max-w-6xl mx-auto px-6 py-24 md:py-36">
           <motion.h2
             {...rise()}
-            className="font-instrument text-white text-4xl md:text-5xl text-center drop-shadow-[0_8px_24px_rgba(30,27,75,0.2)]"
+            className="font-instrument text-[#1e1b4b] text-4xl md:text-6xl text-center"
           >
             Everything <span className="italic">lined up.</span>
           </motion.h2>
-          <motion.p {...rise(0.1)} className="text-white/80 text-center mt-4 max-w-xl mx-auto">
-            See what is going out, where it is going, and exactly when Cotly will publish it.
+          <motion.p {...rise(0.08)} className="text-[#1e1b4b]/70 text-center mt-4 max-w-xl mx-auto">
+            See what's going out, where it's going, and exactly when Cotly will publish it.
           </motion.p>
 
-          <motion.div {...rise(0.15, 24)} className="mt-12 rounded-3xl sky-glass overflow-hidden">
-            {/* Desktop table */}
-            <div className="hidden md:grid grid-cols-[1.1fr_2fr_1.5fr_0.9fr_0.9fr] gap-4 px-7 py-4 text-[11px] font-semibold uppercase tracking-wider text-[#1e1b4b]/50 border-b border-[#1e1b4b]/10">
-              <span>Post</span>
-              <span>Caption</span>
-              <span>Platforms</span>
-              <span>Scheduled</span>
-              <span>Status</span>
-            </div>
-            {QUEUE_ROWS.map((row, i) => (
-              <motion.div
-                key={row.post}
-                initial={{ opacity: 0.18, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: '-60px' }}
-                transition={{ duration: 0.6, ease: EASE, delay: i * 0.12 }}
-                className={`relative border-t border-[#1e1b4b]/10 ${i > 0 ? '' : 'md:border-t-0'}`}
-              >
-                <div className="queue-sweep absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true" />
-                <div className="hidden md:grid grid-cols-[1.1fr_2fr_1.5fr_0.9fr_0.9fr] gap-4 items-center px-7 py-6">
-                  <span className="text-[#1e1b4b] font-semibold">{row.post}</span>
+          <motion.div {...rise(0.15, 24)} className="mt-12">
+            {/* Desktop: real glass scheduling table */}
+            <div className="hidden md:block glass-table">
+              <div className="queue-grid px-7 py-4 text-[11px] font-semibold uppercase tracking-wider text-[#1e1b4b]/55 border-b border-[#1e1b4b]/10">
+                <span>Post</span>
+                <span>Caption</span>
+                <span>Platforms</span>
+                <span>Scheduled</span>
+                <span>Status</span>
+                <span />
+              </div>
+              {QUEUE_ROWS.map((row) => (
+                <div key={row.post} className="queue-grid items-center px-7 py-5 border-t border-[#1e1b4b]/8">
+                  <span className="flex items-center gap-3 min-w-0">
+                    <span className={`w-10 h-10 shrink-0 rounded-xl bg-gradient-to-br ${row.thumb} border border-white shadow-sm`} aria-hidden="true" />
+                    <span className="text-[#1e1b4b] font-semibold truncate">{row.post}</span>
+                  </span>
                   <span className="text-[#1e1b4b]/60 text-sm truncate pr-4">{row.caption}</span>
                   <span className="flex flex-wrap gap-1.5">
                     {row.platforms.map((p) => (
-                      <span key={p} className="rounded-full bg-white/60 border border-white/80 px-2.5 py-0.5 text-xs font-medium text-[#1e1b4b]/80">
-                        {p}
-                      </span>
+                      <PlatformPill key={p} platform={p} />
                     ))}
                   </span>
                   <span className="text-sm text-[#1e1b4b]/80 leading-snug">
@@ -415,112 +440,156 @@ export function Landing({ navigate, authed }: Props) {
                     <br />
                     <span className="text-[#1e1b4b]/50">{row.time}</span>
                   </span>
-                  <span>
-                    <StatusPill status={row.status} />
+                  <span><StatusPill status={row.status} /></span>
+                  <span className="justify-self-end">
+                    <button type="button" aria-label={`More options for ${row.post}`} className="p-1.5 rounded-full text-[#1e1b4b]/40 hover:text-[#1e1b4b]/80 hover:bg-white/70 transition-colors">
+                      <MoreHorizontal className="w-[18px] h-[18px]" aria-hidden="true" />
+                    </button>
                   </span>
                 </div>
-                {/* Mobile card */}
-                <div className="md:hidden px-5 py-5">
-                  <div className="text-[#1e1b4b] font-semibold">{row.post}</div>
-                  <div className="text-[#1e1b4b]/60 text-sm mt-1.5">{row.caption}</div>
-                  <div className="flex flex-wrap gap-1.5 mt-3">
-                    {row.platforms.map((p) => (
-                      <span key={p} className="rounded-full bg-white/60 border border-white/80 px-2.5 py-0.5 text-xs font-medium text-[#1e1b4b]/80">
-                        {p}
-                      </span>
-                    ))}
-                  </div>
-                  <div className="flex items-center justify-between mt-3">
-                    <span className="text-sm text-[#1e1b4b]/70">
-                      {row.date} · {row.time}
-                    </span>
+              ))}
+            </div>
+
+            {/* Mobile: the same rows as glass cards */}
+            <div className="md:hidden flex flex-col gap-3">
+              {QUEUE_ROWS.map((row) => (
+                <div key={row.post} className="glass-table p-5">
+                  <div className="flex items-center gap-3">
+                    <span className={`w-10 h-10 shrink-0 rounded-xl bg-gradient-to-br ${row.thumb} border border-white shadow-sm`} aria-hidden="true" />
+                    <span className="text-[#1e1b4b] font-semibold flex-1 truncate">{row.post}</span>
                     <StatusPill status={row.status} />
                   </div>
+                  <div className="text-[#1e1b4b]/60 text-sm mt-2">{row.caption}</div>
+                  <div className="flex flex-wrap items-center gap-1.5 mt-3">
+                    {row.platforms.map((p) => (
+                      <PlatformPill key={p} platform={p} />
+                    ))}
+                    <span className="ml-auto text-xs text-[#1e1b4b]/60">{row.date} · {row.time}</span>
+                  </div>
                 </div>
-              </motion.div>
-            ))}
+              ))}
+            </div>
           </motion.div>
         </div>
       </section>
 
-      {/* ================= How it works ================= */}
-      <section id="how-it-works" className="relative py-24 md:py-32 px-6">
-        <div className="max-w-5xl mx-auto">
+      {/* ============ Steps + CTA + Footer (ASSET 2 sunrise, one scene) ============ */}
+      <div className="relative overflow-hidden">
+        <div className="absolute inset-0 z-0" aria-hidden="true">
+          <img
+            src="/brand/sunrise.webp"
+            alt=""
+            draggable={false}
+            className="w-full h-full object-cover object-center section-sky-b"
+          />
+        </div>
+
+        {/* -------- Three steps -------- */}
+        <section id="how-it-works" className="relative z-10 pt-24 md:pt-36 pb-10 px-6">
+          <div className="max-w-5xl mx-auto">
+            <motion.h2
+              {...rise()}
+              className="font-instrument text-[#1e1b4b] text-4xl md:text-6xl text-center"
+            >
+              Three steps. Then get on with <span className="italic">your day.</span>
+            </motion.h2>
+            <div className="grid md:grid-cols-3 gap-5 md:gap-6 mt-14 md:mt-20">
+              {STEPS.map((s, i) => (
+                <motion.div
+                  key={s.num}
+                  {...rise(i * 0.12, 24)}
+                  className={`step-card relative text-center px-7 pt-8 pb-9 ${i === 1 ? 'md:mt-10' : ''}`}
+                >
+                  <span className="step-num">{s.num}</span>
+                  <img
+                    src={s.img}
+                    alt=""
+                    aria-hidden="true"
+                    draggable={false}
+                    className="clay-float h-32 md:h-36 mx-auto object-contain select-none"
+                    style={{ animationDelay: `${i * 1.2}s` }}
+                  />
+                  <h3 className="text-[#1e1b4b] text-xl font-semibold mt-5">{s.title}</h3>
+                  <p className="text-[#1e1b4b]/65 text-sm mt-2 leading-relaxed">{s.body}</p>
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* -------- Final CTA -------- */}
+        <section className="relative z-10 py-28 md:py-44 px-6 text-center">
           <motion.h2
             {...rise()}
-            className="font-instrument text-white text-4xl md:text-5xl text-center drop-shadow-[0_8px_24px_rgba(30,27,75,0.2)]"
+            className="font-instrument text-[#1e1b4b] text-5xl md:text-7xl"
           >
-            Three steps. Then get on with <span className="italic">your day.</span>
+            Post it <span className="italic">once.</span>
           </motion.h2>
-          <div className="grid md:grid-cols-3 gap-4 mt-14">
-            {STEPS.map((s, i) => (
-              <motion.div key={s.num} {...rise(i * 0.12, 24)} className="rounded-3xl sky-glass p-7">
-                <div className="font-instrument text-white/70 text-lg">{s.num}</div>
-                <div className="text-[#1e1b4b] text-lg font-semibold mt-3">{s.title}</div>
-                <p className="text-[#1e1b4b]/60 text-sm mt-2 leading-relaxed">{s.body}</p>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
+          <motion.p {...rise(0.1)} className="text-[#1e1b4b]/70 mt-5 max-w-lg mx-auto">
+            Your content has better things to do than sit in twelve different tabs.
+          </motion.p>
+          <motion.div {...rise(0.2)} className="mt-10">
+            <motion.a
+              href={cta.href}
+              onClick={goto(cta.href)}
+              whileHover={{ scale: 1.03, y: -2 }}
+              whileTap={{ scale: 0.98 }}
+              className="inline-flex items-center gap-2 no-underline bg-[#232671] text-white rounded-full px-9 py-4 text-sm md:text-base font-semibold shadow-2xl shadow-[#232671]/40 hover:shadow-[#232671]/55 transition-shadow"
+            >
+              Start posting
+              <ArrowRight className="w-4 h-4" aria-hidden="true" />
+            </motion.a>
+          </motion.div>
+        </section>
 
-      {/* ================= Final CTA ================= */}
-      <section className="relative py-28 md:py-40 px-6 text-center">
-        <motion.h2
-          {...rise()}
-          className="font-instrument text-white text-5xl md:text-7xl drop-shadow-[0_10px_30px_rgba(30,27,75,0.25)]"
-        >
-          Post it <span className="italic">once.</span>
-        </motion.h2>
-        <motion.p {...rise(0.1)} className="text-white/80 mt-5 max-w-lg mx-auto">
-          Your content has better things to do than sit in twelve different tabs.
-        </motion.p>
-        <motion.div {...rise(0.2)} className="mt-10">
-          <motion.a
-            href={cta.href}
-            onClick={goto(cta.href)}
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.98 }}
-            className="inline-block no-underline bg-[#232671] text-white rounded-full px-9 py-4 text-sm md:text-base font-semibold shadow-2xl shadow-[#232671]/40"
-          >
-            Start posting
-          </motion.a>
-        </motion.div>
-      </section>
-
-      {/* ================= Footer ================= */}
-      <footer className="relative border-t border-white/40 py-10 px-6">
-        <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-[#1e1b4b]/60">
-          <div className="flex items-center gap-2 text-[#1e1b4b]/80">
-            <LogoMark className="w-4 h-4" />
-            <span className="font-semibold tracking-tight">Cotly</span>
+        {/* -------- Footer -------- */}
+        <footer className="relative z-10 max-w-6xl mx-auto px-6 pb-10">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-[#1e1b4b]/75">
+            <div className="flex items-center gap-2 text-[#1e1b4b]">
+              <LogoMark className="w-4 h-4" />
+              <span className="font-semibold tracking-tight">Cotly</span>
+            </div>
+            <nav className="flex items-center gap-6">
+              <a href="/terms" onClick={goto('/terms')} className="no-underline text-[#1e1b4b]/70 hover:text-[#1e1b4b] transition-colors">Terms</a>
+              <a href="/privacy" onClick={goto('/privacy')} className="no-underline text-[#1e1b4b]/70 hover:text-[#1e1b4b] transition-colors">Privacy</a>
+              <a href="mailto:hello@cotly.app" className="no-underline text-[#1e1b4b]/70 hover:text-[#1e1b4b] transition-colors">Contact</a>
+            </nav>
           </div>
-          <p className="text-white/60">© 2026 Cotly. An independent scheduler. Not affiliated with the platforms listed.</p>
-          <nav className="flex items-center gap-5">
-            <a href="/terms" onClick={goto('/terms')} className="no-underline text-[#1e1b4b]/60 hover:text-[#1e1b4b] transition-colors">Terms</a>
-            <a href="/privacy" onClick={goto('/privacy')} className="no-underline text-[#1e1b4b]/60 hover:text-[#1e1b4b] transition-colors">Privacy</a>
-            <a href="mailto:hello@cotly.app" className="no-underline text-[#1e1b4b]/60 hover:text-[#1e1b4b] transition-colors">Contact</a>
-          </nav>
-        </div>
-      </footer>
+          <p className="text-center text-[#1e1b4b]/50 text-xs mt-7">© 2026 Cotly.</p>
+        </footer>
+      </div>
     </div>
+  );
+}
+
+function PlatformPill({ platform }: { platform: DemoPlatform }) {
+  const meta = PLATFORM_META[platform];
+  const Icon = meta.icon;
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-white/70 border border-white/90 px-2 py-1 text-xs font-medium text-[#1e1b4b]/80 shadow-sm">
+      <span className={`inline-flex items-center justify-center w-[14px] h-[14px] rounded-full ${meta.chip}`}>
+        <Icon className="w-[9px] h-[9px]" />
+      </span>
+      {meta.label}
+    </span>
   );
 }
 
 function StatusPill({ status }: { status: 'Scheduled' | 'Preparing' }) {
   if (status === 'Preparing') {
     return (
-      <span className="inline-flex items-center gap-2 rounded-full bg-white/60 border border-white/80 px-2.5 py-1 text-xs font-medium text-[#1e1b4b]/80">
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-[#ece9fc] border border-[#d8d2f5] px-2.5 py-1 text-xs font-semibold text-[#5b50c7]">
         <span className="relative flex h-1.5 w-1.5">
-          <span className="absolute inline-flex h-full w-full rounded-full bg-[#5b6cf5] opacity-75 animate-ping" />
-          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[#5b6cf5]" />
+          <span className="absolute inline-flex h-full w-full rounded-full bg-[#7c6cf0] opacity-75 animate-ping" />
+          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[#7c6cf0]" />
         </span>
         Preparing
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center rounded-full bg-white/60 border border-white/80 px-2.5 py-1 text-xs font-medium text-[#1e1b4b]/80">
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-[#e8f7ee] border border-[#bfe8cf] px-2.5 py-1 text-xs font-semibold text-[#1c7a4a]">
+      <span className="w-1.5 h-1.5 rounded-full bg-[#2fae6d]" />
       Scheduled
     </span>
   );
