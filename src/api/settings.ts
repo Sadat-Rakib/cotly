@@ -3,44 +3,51 @@ import { HttpError, json, readJson } from '../lib/http';
 import { mediaStorageReady, objectStore, signedFetch } from '../lib/objectstore';
 import { isValidTimezone, nowS, deploymentStatus } from './_shared';
 
-const KEYS = ['timezone', 'media_retention_hours', 'x_budget_mode', 'x_budget_monthly_usd'] as const;
+// Per-user preference keys (user_settings table). Timezone intentionally is
+// NOT here: it lives on the users row so /api/me and scheduling share one
+// source of truth.
+const USER_KEYS = ['media_retention_hours', 'x_budget_mode', 'x_budget_monthly_usd'] as const;
 
-type SettingsMap = Partial<Record<(typeof KEYS)[number], string>>;
+type SettingsMap = Partial<Record<(typeof USER_KEYS)[number], string>>;
 
-async function readSettings(env: Env): Promise<SettingsMap> {
+async function readUserSettings(env: Env, userId: string): Promise<SettingsMap> {
   const rows = await env.DB
-    .prepare(`SELECT key, value FROM settings WHERE key IN (${KEYS.map(() => '?').join(',')})`)
-    .bind(...KEYS)
+    .prepare(`SELECT key, value FROM user_settings WHERE user_id = ? AND key IN (${USER_KEYS.map(() => '?').join(',')})`)
+    .bind(userId, ...USER_KEYS)
     .all<{ key: string; value: string }>();
   const map: SettingsMap = {};
   for (const r of rows.results ?? []) {
-    if ((KEYS as readonly string[]).includes(r.key)) map[r.key as (typeof KEYS)[number]] = r.value;
+    if ((USER_KEYS as readonly string[]).includes(r.key)) map[r.key as (typeof USER_KEYS)[number]] = r.value;
   }
   return map;
 }
 
-async function upsert(env: Env, key: string, value: string): Promise<void> {
-  await env.DB.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').bind(key, value).run();
+async function upsertUserSetting(env: Env, userId: string, key: string, value: string): Promise<void> {
+  await env.DB
+    .prepare('INSERT INTO user_settings (user_id, key, value) VALUES (?, ?, ?) ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value')
+    .bind(userId, key, value)
+    .run();
 }
 
-export async function getSettings(env: Env): Promise<Response> {
-  const m = await readSettings(env);
+export async function getSettings(env: Env, userId: string): Promise<Response> {
+  const m = await readUserSettings(env, userId);
+  const user = await env.DB.prepare('SELECT timezone FROM users WHERE id = ?').bind(userId).first<{ timezone: string }>();
   const retentionEnv = Number(env.MEDIA_RETENTION_HOURS) || 168;
   return json({
-    timezone: m.timezone ?? 'UTC',
+    timezone: user?.timezone ?? 'UTC',
     mediaRetentionHours: m.media_retention_hours !== undefined && m.media_retention_hours !== '' ? Number(m.media_retention_hours) : retentionEnv,
     xBudgetMode: m.x_budget_mode ?? 'disabled',
     xBudgetMonthlyUsd: m.x_budget_monthly_usd !== undefined && m.x_budget_monthly_usd !== '' ? Number(m.x_budget_monthly_usd) : 0,
   });
 }
 
-export async function putSettings(req: Request, env: Env): Promise<Response> {
+export async function putSettings(req: Request, env: Env, userId: string): Promise<Response> {
   const body = await readJson(req);
   const updates: Array<[string, string]> = [];
   if (body.timezone !== undefined) {
     const tz = String(body.timezone ?? '').trim();
     if (!tz || !isValidTimezone(tz)) throw new HttpError(400, 'Pick a valid time zone.');
-    updates.push(['timezone', tz]);
+    await env.DB.prepare('UPDATE users SET timezone = ? WHERE id = ?').bind(tz, userId).run();
   }
   if (body.mediaRetentionHours !== undefined) {
     const h = body.mediaRetentionHours;
@@ -67,8 +74,8 @@ export async function putSettings(req: Request, env: Env): Promise<Response> {
       throw new HttpError(400, 'The X monthly budget must be zero or a positive amount.');
     }
   }
-  for (const [k, v] of updates) await upsert(env, k, v);
-  return getSettings(env);
+  for (const [k, v] of updates) await upsertUserSetting(env, userId, k, v);
+  return getSettings(env, userId);
 }
 
 export async function getDiagnostics(env: Env): Promise<Response> {

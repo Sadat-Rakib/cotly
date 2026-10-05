@@ -15,13 +15,16 @@ export function isValidMediaKey(key: string): boolean {
   return key.startsWith('media/') && !key.includes('..');
 }
 
-// Retention for the uploading user: explicit setting first, then the
+// Retention for the uploading user: their own setting first, then the
 // deployment default, then 7 days. 'never'/invalid disables stamping (cleanup
 // also treats those as disabled).
-export async function retentionHoursFor(env: Env): Promise<number> {
-  const row = await env.DB.prepare(`SELECT value FROM settings WHERE key = 'media_retention_hours'`).first<{ value: string }>();
-  const fromSettings = row ? Number.parseInt(row.value, 10) : NaN;
-  if (Number.isFinite(fromSettings)) return fromSettings;
+export async function retentionHoursFor(env: Env, userId: string): Promise<number> {
+  const row = await env.DB
+    .prepare(`SELECT value FROM user_settings WHERE user_id = ? AND key = 'media_retention_hours'`)
+    .bind(userId)
+    .first<{ value: string }>();
+  const fromUser = row ? Number.parseInt(row.value, 10) : NaN;
+  if (Number.isFinite(fromUser)) return fromUser;
   const fromEnv = Number.parseInt(env.MEDIA_RETENTION_HOURS ?? '', 10);
   if (Number.isFinite(fromEnv)) return fromEnv;
   return 168; // 7 days
@@ -67,7 +70,7 @@ export async function confirm(req: Request, env: Env, userId: string): Promise<R
   const size = Number(body.size) > 0 ? Number(body.size) : obj.size ?? 0;
   const filename = sanitizeFilename(String(body.filename ?? ''));
   const now = nowS();
-  const retention = await retentionHoursFor(env);
+  const retention = await retentionHoursFor(env, userId);
   const expiresAt = retention > 0 ? now + retention * 3600 : null;
   const r = await env.DB
     .prepare('INSERT INTO media (id, owner_id, mime, size, original_filename, r2_key, created_at, expires_at, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')

@@ -98,8 +98,8 @@ async function route(req: Request, env: Env): Promise<Response> {
     return posts.retryTarget(env, userId, seg[2] as string);
   }
 
-  if (method === 'GET' && path === '/api/settings') return settings.getSettings(env);
-  if (method === 'PUT' && path === '/api/settings') return settings.putSettings(req, env);
+  if (method === 'GET' && path === '/api/settings') return settings.getSettings(env, userId);
+  if (method === 'PUT' && path === '/api/settings') return settings.putSettings(req, env, userId);
   if (method === 'GET' && path === '/api/diagnostics') return settings.getDiagnostics(env);
 
   throw new HttpError(404, 'Not found');

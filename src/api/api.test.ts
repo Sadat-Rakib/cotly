@@ -8,6 +8,7 @@ import schema from '../../migrations/0001_init.sql?raw';
 import schema0002 from '../../migrations/0002_user_name.sql?raw';
 import schema0003 from '../../migrations/0003_user_ownership.sql?raw';
 import schema0004 from '../../migrations/0004_media_lifecycle.sql?raw';
+import schema0005 from '../../migrations/0005_user_settings.sql?raw';
 
 // NOTE: this pool runs with per-test isolated storage — writes inside a test are
 // rolled back when it ends, while writes in beforeAll persist for every test.
@@ -83,6 +84,9 @@ beforeAll(async () => {
     await e.DB.prepare(stmt).run();
   }
   for (const stmt of schema0004.split('\n').filter((l) => !l.trimStart().startsWith('--')).join('\n').split(';').map((s) => s.trim()).filter(Boolean)) {
+    await e.DB.prepare(stmt).run();
+  }
+  for (const stmt of schema0005.split('\n').filter((l) => !l.trimStart().startsWith('--')).join('\n').split(';').map((s) => s.trim()).filter(Boolean)) {
     await e.DB.prepare(stmt).run();
   }
 
@@ -206,6 +210,21 @@ test('multi-user isolation: a second user sees none of the owner data', async ()
   const ownerList = await api('/api/posts', 'GET', undefined, { auth: true });
   const ownerPosts = (await ownerList.json()) as Array<{ id: string }>;
   expect(ownerPosts.some((p) => p.id === postId)).toBe(true);
+
+  // Settings are per-user too: B changes their retention and timezone without
+  // touching the owner's preferences.
+  const bPut = await api('/api/settings', 'PUT', { mediaRetentionHours: 72, timezone: 'Asia/Tokyo' }, { ...b, csrf: true });
+  expect(bPut.status).toBe(200);
+  const bSettings = (await bPut.json()) as { mediaRetentionHours: number; timezone: string };
+  expect(bSettings.mediaRetentionHours).toBe(72);
+  expect(bSettings.timezone).toBe('Asia/Tokyo');
+
+  const ownerSettings = (await (await api('/api/settings', 'GET', undefined, { auth: true })).json()) as {
+    mediaRetentionHours: number;
+    timezone: string;
+  };
+  expect(ownerSettings.mediaRetentionHours).not.toBe(72);
+  expect(ownerSettings.timezone).toBe('Europe/Berlin');
 });
 
 test('media upload and its URL are scoped to the uploading user', async () => {
