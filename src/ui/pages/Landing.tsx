@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
-import { CalendarDays, Check, ImageIcon, Plus } from 'lucide-react';
+import { ArrowRight, Sparkles } from 'lucide-react';
 import { Logo, LogoMark } from '../components/Logo';
 
-// lucide-react v1 dropped brand icons, so the mockup carries its own tiny
-// marks. All are decorative (aria-hidden) and inherit currentColor.
+// lucide-react v1 dropped brand icons, so the badge carries its own tiny marks.
 function XIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -13,24 +12,48 @@ function XIcon({ className }: { className?: string }) {
   );
 }
 
-function ThreadsIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M15.5 10.2c-.6-2.4-2-3.4-3.8-3.3-2.3.1-3.9 1.9-3.8 5.1.1 3.2 1.6 5 3.9 5 1.9 0 3.3-1.1 3.5-2.7.2-1.5-.9-2.6-2.6-2.8-1.2-.1-2.3.2-2.9.7" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 function InstagramIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden="true">
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
       <rect x="3.5" y="3.5" width="17" height="17" rx="4.5" />
       <circle cx="12" cy="12" r="3.6" />
       <circle cx="16.9" cy="7.1" r="1" fill="currentColor" stroke="none" />
     </svg>
   );
 }
+
+function TikTokIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M16.6 3c.4 2.1 1.8 3.6 3.9 3.9v3c-1.5 0-2.9-.5-3.9-1.3v5.9c0 3.4-2.6 5.9-5.9 5.9A5.87 5.87 0 0 1 4.8 14.6c0-3.3 2.7-6 6.1-5.9v3.1c-1.6-.2-3 .9-3.1 2.5-.1 1.5 1 2.8 2.5 2.9h.3c1.5 0 2.8-1.2 2.8-2.8V3h3.2z" />
+    </svg>
+  );
+}
+
+function YouTubeIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M21.6 7.2a2.8 2.8 0 0 0-2-2C17.9 4.8 12 4.8 12 4.8s-5.9 0-7.6.4a2.8 2.8 0 0 0-2 2A29 29 0 0 0 2 12c0 1.6.1 3.2.4 4.8a2.8 2.8 0 0 0 2 2c1.7.4 7.6.4 7.6.4s5.9 0 7.6-.4a2.8 2.8 0 0 0 2-2c.3-1.6.4-3.2.4-4.8s-.1-3.2-.4-4.8zM10 15.2V8.8L15.5 12 10 15.2z" />
+    </svg>
+  );
+}
+
+function LinkedInIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M4.98 3.5a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5zM3 9h4v12H3V9zm6 0h3.8v1.7h.1c.5-1 1.8-2 3.7-2 4 0 4.7 2.6 4.7 6V21h-4v-5.5c0-1.3 0-3-1.9-3-1.9 0-2.2 1.4-2.2 2.9V21H9V9z" />
+    </svg>
+  );
+}
+
+// Tiny colored chips for the badge, mirroring the concept render.
+const BADGE_PLATFORMS = [
+  { label: 'X', icon: XIcon, className: 'bg-[#0f1419] text-white' },
+  { label: 'Instagram', icon: InstagramIcon, className: 'bg-gradient-to-br from-[#f9ce34] via-[#ee2a7b] to-[#6228d7] text-white' },
+  { label: 'TikTok', icon: TikTokIcon, className: 'bg-[#0f1419] text-white' },
+  { label: 'YouTube', icon: YouTubeIcon, className: 'bg-[#ff0000] text-white' },
+  { label: 'LinkedIn', icon: LinkedInIcon, className: 'bg-[#0a66c2] text-white' },
+];
 
 interface Props {
   navigate: (p: string) => void;
@@ -91,17 +114,24 @@ const rise = (delay = 0, y = 16) => ({
 
 // One huge faded phrase drifting across the sky. Two copies per track make the
 // -50% translate loop seamless; the row is decorative and hidden from a11y.
+// With `half`, the track anchors to one side so a pair can flank the hero
+// visual from opposite edges (POST ONCE. | GET ON WITH YOUR DAY.).
 function GhostWords({
   phrase,
   side,
   size,
+  half = false,
 }: {
   phrase: string;
   side: 'left' | 'right';
   size: string;
+  half?: boolean;
 }) {
   return (
-    <div className={`ghost-words ghost-${side} ${size}`} aria-hidden="true">
+    <div
+      className={`ghost-words ghost-${side} ${size} ${half ? `ghost-half-${side}` : ''}`}
+      aria-hidden="true"
+    >
       <div className="ghost-track">
         {[0, 1].map((i) => (
           <span key={i} className="ghost-word">
@@ -130,70 +160,46 @@ function SkyScene() {
   );
 }
 
-// The floating Cotly compose mockup — real HTML/CSS on a glass card, tilted
-// slightly like the concept. Decorative only (aria-hidden), never a real form.
-function ComposeMockup() {
+// The hero centerpiece: a generated 3D scene (projector device + holographic
+// compose screen) as a feathered WebP cutout floating on the coded sky. The
+// huge faded words flank it from opposite edges, drifting in opposite
+// directions; the handwritten note is coded text, not baked pixels.
+function HeroVisual() {
   return (
-    <div
-      aria-hidden="true"
-      className="sky-glass rounded-3xl p-3 select-none max-w-lg mx-auto"
-      style={{ transform: 'perspective(1200px) rotateX(4deg) rotateY(-4deg)' }}
-    >
-      <div className="flex items-center justify-between px-2 pt-1 pb-3">
-        <span className="text-[13px] font-semibold text-[#1e1b4b]">Create Post</span>
-        <span className="text-[11px] text-[#1e1b4b]/50">Draft saved</span>
+    <div className="relative max-w-4xl mx-auto px-4">
+      <div className="absolute inset-x-0 -top-10 md:-top-16" aria-hidden="true">
+        <GhostWords phrase="POST ONCE." side="left" half size="text-[15vw] md:text-[9rem]" />
+        <GhostWords phrase="GET ON WITH YOUR DAY." side="right" half size="text-[8vw] md:text-[4.6rem] top-6 md:top-10" />
       </div>
 
-      <div className="rounded-2xl bg-white/70 border border-white/80 p-4 shadow-sm">
-        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#1e1b4b]/45">Caption</div>
-        <p className="text-sm text-[#1e1b4b]/90 mt-1.5">
-          Launching something new this Friday.
-          <span className="inline-block w-px h-4 bg-[#5b6cf5] ml-0.5 align-[-2px] animate-pulse" />
+      <motion.img
+        initial={{ opacity: 0, y: 48 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.9, ease: EASE, delay: 0.45 }}
+        src="/brand/hero-device.webp"
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+        className="relative z-10 w-full h-auto select-none sky-float-slow hero-glow"
+      />
+
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.8, ease: EASE, delay: 1 }}
+        aria-hidden="true"
+        className="hidden lg:block absolute z-10 right-[-2.5rem] top-[38%] -rotate-6 text-right"
+      >
+        <p className="font-hand text-[#4a44c9] text-2xl leading-tight drop-shadow-[0_2px_6px_rgba(255,255,255,0.55)]">
+          Write once.
+          <br />
+          Publish everywhere.
         </p>
-
-        <div className="mt-4 flex items-center gap-3">
-          <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-[#c4a9f5] to-[#f3cce8] border border-white flex items-center justify-center">
-            <ImageIcon className="w-5 h-5 text-white" />
-          </div>
-          <div className="w-14 h-14 rounded-xl border-2 border-dashed border-[#1e1b4b]/20 flex items-center justify-center">
-            <Plus className="w-4 h-4 text-[#1e1b4b]/40" />
-          </div>
-          <div className="text-xs text-[#1e1b4b]/55">
-            launch-teaser.png
-            <div className="text-[#1e1b4b]/35">1.2 MB</div>
-          </div>
-        </div>
-
-        <div className="mt-4">
-          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#1e1b4b]/45">Destinations</div>
-          <div className="flex items-center gap-2.5 mt-2">
-            {[
-              { icon: XIcon, label: 'X' },
-              { icon: ThreadsIcon, label: 'Threads' },
-              { icon: InstagramIcon, label: 'Instagram' },
-            ].map(({ icon: Icon, label }) => (
-              <span
-                key={label}
-                className="inline-flex items-center gap-1.5 rounded-full bg-[#5b6cf5]/10 border border-[#5b6cf5]/25 px-2.5 py-1 text-xs font-medium text-[#312e81]"
-              >
-                <Icon className="w-3.5 h-3.5" />
-                {label}
-                <Check className="w-3 h-3" />
-              </span>
-            ))}
-          </div>
-        </div>
-
-        <div className="mt-4 flex items-center justify-between border-t border-[#1e1b4b]/10 pt-3.5">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-white/80 border border-[#1e1b4b]/10 px-3 py-1.5 text-xs font-medium text-[#1e1b4b]/75">
-            <CalendarDays className="w-3.5 h-3.5" />
-            Friday · 9:30 AM
-          </span>
-          <span className="rounded-full bg-[#232671] text-white text-sm font-semibold px-4 py-2 shadow-lg shadow-[#5b6cf5]/30">
-            Schedule
-          </span>
-        </div>
-      </div>
+        <svg viewBox="0 0 60 40" className="w-10 h-7 ml-auto mr-6 mt-1 text-[#4a44c9]" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <path d="M6 4 C 18 26, 34 30, 50 22" />
+          <path d="M42 20 l 9 2 -4 8" />
+        </svg>
+      </motion.div>
     </div>
   );
 }
@@ -270,9 +276,10 @@ export function Landing({ navigate, authed }: Props) {
               onClick={goto(cta.href)}
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.98 }}
-              className="hidden md:inline-block no-underline bg-white text-[#1e1b4b] text-sm font-semibold rounded-full px-5 py-2 shadow-lg shadow-[#5b6cf5]/25 hover:bg-white/90 transition-colors"
+              className="hidden md:inline-flex md:items-center md:gap-1.5 no-underline bg-white text-[#1e1b4b] text-sm font-semibold rounded-full px-5 py-2 shadow-lg shadow-[#5b6cf5]/25 hover:bg-white/90 transition-colors"
             >
               {cta.label}
+              <ArrowRight className="w-4 h-4" aria-hidden="true" />
             </motion.a>
             <button
               type="button"
@@ -314,76 +321,77 @@ export function Landing({ navigate, authed }: Props) {
         ))}
       </div>
 
-      {/* ================= Hero ================= */}
-      <section className="relative w-full overflow-hidden pt-32 md:pt-44 pb-20 md:pb-28">
-        <SkyScene />
+        {/* ================= Hero ================= */}
+        <section className="relative w-full overflow-hidden pt-32 md:pt-40 pb-20 md:pb-24">
+          <SkyScene />
 
-        {/* Huge faded background words drifting in opposite directions. */}
-        <div className="absolute inset-0" aria-hidden="true">
-          <GhostWords phrase="POST ONCE." side="left" size="top-[2%] text-[16vw] md:text-[11rem]" />
-          <GhostWords phrase="GET ON WITH YOUR DAY." side="right" size="top-[24%] text-[9vw] md:text-[6.5rem]" />
-        </div>
-
-        <div className="relative text-center px-6 max-w-4xl mx-auto">
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, ease: EASE }}
-            className="inline-flex items-center gap-2.5 liquid-glass rounded-full px-4 py-1.5"
-          >
-            <span className="bg-white text-[#1e1b4b] text-[11px] font-semibold rounded-full px-2 py-0.5">20+</span>
-            <span className="text-white text-sm font-medium drop-shadow">platforms supported</span>
-          </motion.div>
-
-          <motion.h1
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, ease: EASE, delay: 0.1 }}
-            className="font-instrument text-white text-6xl md:text-8xl leading-[0.95] mt-8 drop-shadow-[0_10px_30px_rgba(30,27,75,0.25)]"
-          >
-            Post once.
-            <br />
-            Get on with your <span className="italic">day.</span>
-          </motion.h1>
-
-          <motion.p
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, ease: EASE, delay: 0.2 }}
-            className="text-white/85 text-base md:text-lg mt-6 max-w-xl mx-auto drop-shadow"
-          >
-            Write your post, add your media, choose your accounts, and let Cotly handle the publishing for you.
-          </motion.p>
-
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, ease: EASE, delay: 0.3 }}
-            className="mt-10 flex flex-col items-center gap-3"
-          >
-            <motion.a
-              href={cta.href}
-              onClick={goto(cta.href)}
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.98 }}
-              className="inline-block no-underline bg-white text-[#1e1b4b] rounded-full px-8 py-3.5 text-sm md:text-base font-semibold shadow-xl shadow-[#5b6cf5]/30"
+          <div className="relative text-center px-6 max-w-4xl mx-auto">
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, ease: EASE }}
+              className="inline-flex items-center gap-2.5 liquid-glass rounded-full pl-3 pr-4 py-1.5"
             >
-              Start posting
-            </motion.a>
-            <span className="text-white/70 text-sm">Works with 20+ platforms — X, Threads, Instagram, Bluesky and more.</span>
-          </motion.div>
-        </div>
+              <Sparkles className="w-3.5 h-3.5 text-white/90" aria-hidden="true" />
+              <span className="text-white text-sm font-medium drop-shadow">20+ platforms supported</span>
+              <span className="flex items-center gap-1 ml-0.5">
+                {BADGE_PLATFORMS.map(({ label, icon: Icon, className }) => (
+                  <span
+                    key={label}
+                    title={label}
+                    className={`inline-flex items-center justify-center w-[18px] h-[18px] rounded-full ${className} shadow-sm ring-1 ring-white/30`}
+                  >
+                    <Icon className="w-[11px] h-[11px]" />
+                  </span>
+                ))}
+              </span>
+            </motion.div>
 
-        {/* Floating Cotly compose mockup */}
-        <motion.div
-          initial={{ opacity: 0, y: 40 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, ease: EASE, delay: 0.4 }}
-          className="relative max-w-5xl mx-auto px-6 mt-16 md:mt-24 sky-float-slow"
-        >
-          <ComposeMockup />
-        </motion.div>
-      </section>
+            <motion.h1
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, ease: EASE, delay: 0.1 }}
+              className="font-instrument text-white text-6xl md:text-8xl leading-[0.95] mt-8 drop-shadow-[0_10px_30px_rgba(30,27,75,0.25)]"
+            >
+              Post once.
+              <br />
+              Get on with your <span className="italic">day.</span>
+            </motion.h1>
+
+            <motion.p
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, ease: EASE, delay: 0.2 }}
+              className="text-white/85 text-base md:text-lg mt-6 max-w-xl mx-auto drop-shadow"
+            >
+              Write your post, add your media, choose your accounts, and let Cotly handle the publishing for you.
+            </motion.p>
+
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, ease: EASE, delay: 0.3 }}
+              className="mt-10 flex flex-col items-center gap-3"
+            >
+              <motion.a
+                href={cta.href}
+                onClick={goto(cta.href)}
+                whileHover={{ scale: 1.04 }}
+                whileTap={{ scale: 0.97 }}
+                className="inline-flex items-center gap-2 no-underline bg-white text-[#1e1b4b] rounded-full px-8 py-3.5 text-sm md:text-base font-semibold shadow-xl shadow-[#5b6cf5]/40 hover:shadow-2xl hover:shadow-[#5b6cf5]/50 transition-shadow"
+              >
+                Start posting
+                <ArrowRight className="w-4 h-4" aria-hidden="true" />
+              </motion.a>
+              <span className="text-white/70 text-sm">Works with 20+ platforms — X, Threads, Instagram, Bluesky and more.</span>
+            </motion.div>
+          </div>
+
+          {/* Floating Cotly hero visual with flanking background words */}
+          <div className="relative max-w-5xl mx-auto mt-14 md:mt-20">
+            <HeroVisual />
+          </div>
+        </section>
 
       {/* ================= Content queue ================= */}
       <section id="queue" className="relative py-24 md:py-32 px-6">

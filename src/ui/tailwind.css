@@ -136,6 +136,22 @@ input:-webkit-autofill:focus {
   padding-right: 0.6em;
 }
 
+/* Half-width anchored variants so a pair of tracks can flank the hero visual
+   from opposite edges (base .ghost-words spans left:0;right:0, which would
+   over-constrain a 50% width). */
+.ghost-half-left { left: 0; right: auto; width: 50%; }
+.ghost-half-right { left: auto; right: 0; width: 50%; }
+
+/* Handwritten annotation next to the hero visual. */
+.font-hand {
+  font-family: 'Caveat', 'Segoe Script', cursive;
+}
+
+/* Soft colored glow that follows the hero cutout's feathered alpha. */
+.hero-glow {
+  filter: drop-shadow(0 34px 60px rgba(76, 61, 191, 0.32));
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ghost-left .ghost-track,
   .ghost-right .ghost-track,
