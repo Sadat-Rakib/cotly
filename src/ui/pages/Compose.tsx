@@ -9,6 +9,7 @@ import {
   type Provider,
 } from '../api';
 import { CAPABILITIES } from '../../contracts/capabilities';
+import { CollapsibleCard } from '../components/CollapsibleCard';
 import { MediaPicker, type MediaItem } from '../components/MediaPicker';
 import { ScheduleSection, type ScheduleMode } from '../components/ScheduleSection';
 import { ReviewScreen, type ReviewDraft } from '../components/ReviewScreen';
@@ -204,18 +205,23 @@ export function ComposePage({ me, navigate }: Props) {
 
       {!reviewing ? (
         <>
-          <section className="card" id="compose-media">
-            <h2>Media</h2>
+          <CollapsibleCard
+            title="Media"
+            id="compose-media"
+            badge={media.length > 0 ? `${media.length} file${media.length === 1 ? '' : 's'}` : undefined}
+          >
             <MediaPicker items={media} setItems={setMedia} />
             {videoWarnings.length > 0 && (
               <ul className="warn-list">
                 {videoWarnings.map((w) => <li key={w}>{w}</li>)}
               </ul>
             )}
-          </section>
+          </CollapsibleCard>
 
-          <section className="card">
-            <h2>Caption</h2>
+          <CollapsibleCard
+            title="Caption"
+            badge={caption.trim() !== '' ? `${[...caption].length} chars` : undefined}
+          >
             <textarea
               className="textarea caption-input"
               value={caption}
@@ -276,13 +282,15 @@ export function ComposePage({ me, navigate }: Props) {
                 </button>
               </details>
             ))}
-          </section>
+          </CollapsibleCard>
 
-          <section className="card">
-            <h2>Destinations</h2>
+          <CollapsibleCard
+            title="Destinations"
+            badge={selected.length > 0 ? `${selected.length} selected` : undefined}
+          >
             {!loaded && <div className="skeleton" style={{ height: 48 }} />}
             {loaded && accounts.length === 0 && (
-              <p className="empty-line">No accounts yet — connect one under Accounts.</p>
+              <p className="empty-line">No accounts yet — connect one under Profile.</p>
             )}
             {groups.map(([provider, list]) => (
               <div key={provider} className="dest-group">
@@ -310,9 +318,9 @@ export function ComposePage({ me, navigate }: Props) {
             {selected.some((a) => a.status !== 'connected') && (
               <p className="error-text">Some selected accounts are not connected — deselect or reconnect them.</p>
             )}
-          </section>
+          </CollapsibleCard>
 
-          <div id="compose-schedule">
+          <CollapsibleCard title="Schedule" id="compose-schedule" badge={mode === 'now' ? 'Publish now' : `${slots.length} slot${slots.length === 1 ? '' : 's'}`}>
             <ScheduleSection
               defaultTz={me.timezone}
               mode={mode}
@@ -322,7 +330,7 @@ export function ComposePage({ me, navigate }: Props) {
               tz={tz}
               onTzChange={setTz}
             />
-          </div>
+          </CollapsibleCard>
 
           {err && <p className="error-text banner-error" role="alert">{err}</p>}
           {Object.keys(fieldErrors).length > 0 && (

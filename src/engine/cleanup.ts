@@ -1,4 +1,5 @@
 import type { Env } from '../contracts/env';
+import { objectDelete, objectStore } from '../lib/objectstore';
 import { logActivity } from './publish';
 
 const TERMINAL_TARGETS = "('published','failed','cancelled','assisted')";
@@ -28,42 +29,48 @@ export async function rollupAffectedPosts(env: Env, postIds: Iterable<string>, n
 }
 
 // 'never', invalid or <= 0 disables cleanup entirely.
-async function getRetentionHours(env: Env): Promise<number> {
+export async function getRetentionHours(env: Env): Promise<number> {
   const row = await env.DB.prepare(`SELECT value FROM settings WHERE key = 'media_retention_hours'`).first<{ value: string }>();
   if (row) {
     const n = Number.parseInt(row.value, 10);
     return Number.isFinite(n) && n > 0 ? n : 0;
   }
   const n = Number.parseInt(env.MEDIA_RETENTION_HOURS ?? '', 10);
-  return Number.isFinite(n) && n > 0 ? n : 48;
+  return Number.isFinite(n) && n > 0 ? n : 168;
 }
 
-// A media row is deletable only when every post referencing it is terminal AND
-// past completed_at + retention; the NOT EXISTS encodes the "never delete media
-// still referenced by a non-terminal or unexpired post" rule.
+// Media expires at media.expires_at (stamped at upload). Rows predating the
+// column fall back to created_at + retention, so cleanup stays correct with or
+// without a backfill. Media referenced by a non-terminal post is always kept —
+// a scheduled post still needs its file to publish. Deleting a row after its
+// post finished never touches the published social post itself.
 export async function cleanupExpiredMedia(env: Env, now: number): Promise<number> {
   const retentionHours = await getRetentionHours(env);
   if (retentionHours <= 0) return 0;
+  const store = objectStore(env);
+  if (!store) return 0;
+
   const rows =
     (
       await env.DB
         .prepare(
-          `SELECT m.id AS id, m.r2_key AS r2_key FROM media m WHERE NOT EXISTS (
-             SELECT 1 FROM post_media pm JOIN posts p ON p.id = pm.post_id
-             WHERE pm.media_id = m.id AND (
-               p.completed_at IS NULL OR p.completed_at + ? >= ?
-               OR EXISTS (SELECT 1 FROM post_targets t WHERE t.post_id = p.id AND t.status NOT IN ${TERMINAL_TARGETS})
-             )
-           )`,
+          `SELECT m.id AS id, m.r2_key AS r2_key FROM media m
+           WHERE COALESCE(m.expires_at, m.created_at + ?) <= ?
+             AND NOT EXISTS (
+               SELECT 1 FROM post_media pm JOIN posts p ON p.id = pm.post_id
+               WHERE pm.media_id = m.id AND EXISTS (
+                 SELECT 1 FROM post_targets t WHERE t.post_id = p.id AND t.status NOT IN ${TERMINAL_TARGETS}
+               )
+             )`,
         )
         .bind(retentionHours * 3600, now)
         .all<{ id: string; r2_key: string }>()
     ).results ?? [];
 
   let deleted = 0;
-  for (const m of env.MEDIA ? rows : []) {
+  for (const m of rows) {
     try {
-      await env.MEDIA.delete(m.r2_key);
+      await objectDelete(env, m.r2_key);
     } catch {
       // object may already be gone; the row is what matters
     }
@@ -72,6 +79,13 @@ export async function cleanupExpiredMedia(env: Env, now: number): Promise<number
     deleted++;
   }
   if (deleted > 0) {
+    await env.DB
+      .prepare(
+        `INSERT INTO settings (key, value) VALUES ('media_cleaned_total', ?)
+         ON CONFLICT(key) DO UPDATE SET value = CAST(CAST(value AS INTEGER) + ? AS TEXT)`,
+      )
+      .bind(String(deleted), String(deleted))
+      .run();
     await logActivity(env, now, 'info', 'media_cleanup', `Deleted ${deleted} expired media object(s) past ${retentionHours}h retention.`);
   }
   return deleted;

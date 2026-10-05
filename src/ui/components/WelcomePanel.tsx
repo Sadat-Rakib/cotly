@@ -25,14 +25,11 @@ export function WelcomePanel({ navigate }: Props) {
         <h2>Welcome to Cotly</h2>
         <button type="button" className="btn btn-ghost btn-sm" onClick={dismiss}>Dismiss</button>
       </div>
-      <p className="hint">Five quick steps to your first scheduled post:</p>
+      <p className="hint">Four quick steps to your first scheduled post:</p>
       <ol className="welcome-steps">
         <li>
-          <button type="button" className="linklike" onClick={() => navigate('/app/setup')}>Check deployment</button>{' '}
-          — make sure storage, secrets and the scheduler are green.
-        </li>
-        <li>
-          <button type="button" className="linklike" onClick={() => navigate('/app/accounts')}>Connect your first account</button>.
+          <button type="button" className="linklike" onClick={() => navigate('/app/profile')}>Connect your first account</button>{' '}
+          — open Profile and pick a platform.
         </li>
         <li>
           <a href="#compose-media">Upload content</a> below — images or video, in the order you want them.

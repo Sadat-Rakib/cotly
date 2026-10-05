@@ -166,7 +166,7 @@ describe('facebook adapter', () => {
     const badEnv = { APP_URL: 'http://localhost:8787' } as unknown as Env;
     const out = await new FacebookAdapter().publish(badEnv, input({ media: [media()] }));
     expect(out).toMatchObject({ kind: 'failed', retryable: false, errorCode: 'MEDIA_SIGNING_NOT_CONFIGURED' });
-    expect(JSON.stringify(out)).toContain('R2 public media signing is not configured');
+    expect(JSON.stringify(out)).toContain('Media signing is not configured');
     expect(calls).toHaveLength(0);
   });
 

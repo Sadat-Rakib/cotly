@@ -62,9 +62,16 @@ async function route(req: Request, env: Env): Promise<Response> {
   }
 
   if (method === 'POST' && path === '/api/media/upload-url') return media.uploadUrl(req, env);
+  // Worker-relayed upload (binding-only stores) and session-authenticated read.
+  if (method === 'PUT' && seg.length === 4 && seg[1] === 'media' && seg[2] === 'upload') {
+    return media.relayUpload(req, env, userId);
+  }
   if (method === 'POST' && path === '/api/media/confirm') return media.confirm(req, env, userId);
   if (method === 'GET' && seg.length === 4 && seg[1] === 'media' && seg[3] === 'url') {
     return media.mediaUrl(env, seg[2] as string, userId);
+  }
+  if (method === 'GET' && seg.length === 4 && seg[1] === 'media' && seg[3] === 'raw') {
+    return media.mediaRaw(env, seg[2] as string, userId);
   }
 
   if (method === 'POST' && path === '/api/posts') return posts.create(req, env, userId);

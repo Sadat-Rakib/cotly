@@ -57,7 +57,7 @@ function setEnv(values: Record<string, string | undefined>): void {
 }
 
 interface SetupStatusBody {
-  deployment: { d1: boolean; r2: boolean; cron: boolean | 'unknown'; appUrl: string; encryptionSecretSet: boolean; sessionSecretSet: boolean; mediaPresignReady: boolean };
+  deployment: { d1: boolean; r2: boolean; cron: boolean | 'unknown'; appUrl: string; encryptionSecretSet: boolean; sessionSecretSet: boolean; mediaPresignReady: boolean; mediaSigningReady: boolean };
   owner: { exists: boolean; email: string | null };
   accounts: Array<{ id: string; provider: string; displayName: string; status: string; lastVerifiedAt: number | null }>;
   providers: Array<{ provider: string; implemented: boolean; configured: boolean; reason: string; connected: boolean; badge: string }>;
@@ -112,6 +112,11 @@ test('setup/status reports honest booleans on a bare deployment', async () => {
     R2_ACCOUNT_ID: undefined,
     R2_ACCESS_KEY_ID: undefined,
     R2_SECRET_ACCESS_KEY: undefined,
+    MEDIA_S3_ENDPOINT: undefined,
+    MEDIA_S3_BUCKET: undefined,
+    MEDIA_S3_REGION: undefined,
+    MEDIA_S3_ACCESS_KEY_ID: undefined,
+    MEDIA_S3_SECRET_ACCESS_KEY: undefined,
     META_CLIENT_ID: undefined,
     META_CLIENT_SECRET: undefined,
     THREADS_CLIENT_ID: undefined,
@@ -137,7 +142,9 @@ test('setup/status reports honest booleans on a bare deployment', async () => {
   expect((body.deployment.appUrl as string).length).toBeGreaterThan(0);
   expect(body.deployment.encryptionSecretSet).toBe(true);
   expect(body.deployment.sessionSecretSet).toBe(true);
-  expect(body.deployment.mediaPresignReady).toBe(false);
+  // The miniflare R2 binding counts as storage; presigned platform URLs need S3 creds.
+  expect(body.deployment.mediaPresignReady).toBe(true);
+  expect(body.deployment.mediaSigningReady).toBe(false);
 
   expect(body.owner).toEqual({ exists: true, email: 'owner@test.dev' });
   expect(body.accounts).toEqual([]);
@@ -178,7 +185,9 @@ test('setup/status reports honest booleans on a bare deployment', async () => {
   expect(done.owner_configured).toBe(true);
   expect(done.provider_configured).toBe(false);
   expect(done.account_connected).toBe(false);
-  expect(done.media_upload_ready).toBe(false);
+  // The miniflare R2 binding provides storage, so uploads are ready even
+  // without presigning credentials.
+  expect(done.media_upload_ready).toBe(true);
   expect(done.publish_now_tested).toBe(false);
   expect(done.scheduled_tested).toBe(false);
   expect(done.evidence_stored).toBe(false);
@@ -271,20 +280,20 @@ test('media/:id/url 404s for unknown and foreign media', async () => {
   expect((await api('/api/media/med_ck_foreign/url', 'GET', undefined, { auth: true })).status).toBe(404);
 });
 
-test('media/:id/url 503s with a human message without R2 credentials', async () => {
-  setEnv({ R2_ACCOUNT_ID: undefined, R2_ACCESS_KEY_ID: undefined, R2_SECRET_ACCESS_KEY: undefined });
+test('media/:id/url falls back to the worker-relayed raw URL without S3 credentials', async () => {
+  setEnv({ R2_ACCOUNT_ID: undefined, R2_ACCESS_KEY_ID: undefined, R2_SECRET_ACCESS_KEY: undefined, MEDIA_S3_ENDPOINT: undefined, MEDIA_S3_BUCKET: undefined, MEDIA_S3_ACCESS_KEY_ID: undefined, MEDIA_S3_SECRET_ACCESS_KEY: undefined });
   const t = nowS();
   await e.DB
     .prepare(`INSERT INTO media (id, owner_id, mime, size, original_filename, r2_key, created_at) VALUES (?, 'owner', 'image/png', 10, 'own.png', 'media/own/own.png', ?)`)
     .bind('med_ck_own', t)
     .run();
   const res = await api('/api/media/med_ck_own/url', 'GET', undefined, { auth: true });
-  expect(res.status).toBe(503);
-  expect(((await res.json()) as { error: string }).error).toMatch(/not configured/i);
+  expect(res.status).toBe(200);
+  expect(((await res.json()) as { url: string }).url).toContain('/api/media/med_ck_own/raw');
 });
 
 test('media/:id/url returns a locally-signed presigned GET when R2 credentials exist', async () => {
-  setEnv({ R2_ACCOUNT_ID: 'acctck123', R2_ACCESS_KEY_ID: 'test-access', R2_SECRET_ACCESS_KEY: 'test-secret-access' });
+  setEnv({ R2_ACCOUNT_ID: 'acctck123', R2_ACCESS_KEY_ID: 'test-access', R2_SECRET_ACCESS_KEY: 'test-secret-access', MEDIA_S3_ENDPOINT: undefined, MEDIA_S3_BUCKET: undefined, MEDIA_S3_ACCESS_KEY_ID: undefined, MEDIA_S3_SECRET_ACCESS_KEY: undefined });
   const t = nowS();
   await e.DB
     .prepare(`INSERT INTO media (id, owner_id, mime, size, original_filename, r2_key, created_at) VALUES (?, 'owner', 'image/png', 10, 'own.png', 'media/own/own.png', ?)`)
@@ -345,9 +354,14 @@ test('diagnostics includes deployment and cleanup from real state', async () => 
   const body = (await res.json()) as {
     deployment: { d1: boolean; mediaPresignReady: boolean };
     cleanup: { lastCleanupAt: number | null };
+    media: { objectCount: number; totalBytes: number; cleanedTotal: number; storageReady: boolean };
   };
   expect(body.deployment.d1).toBe(true);
-  expect(body.deployment.mediaPresignReady).toBe(false);
+  // The miniflare R2 binding provides storage on this deployment.
+  expect(body.deployment.mediaPresignReady).toBe(true);
+  expect(body.media.storageReady).toBe(true);
+  expect(body.media.objectCount).toBe(0);
+  expect(body.media.cleanedTotal).toBe(0);
   expect(body.cleanup.lastCleanupAt).toBeNull();
 
   const t = nowS();

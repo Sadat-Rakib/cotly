@@ -4,6 +4,7 @@ import type { Env } from '../contracts/env';
 import { encryptSecret, randomId } from '../lib/crypto';
 import { runSchedulerTick } from './cron';
 import schema from '../../migrations/0001_init.sql?raw';
+import schema0004 from '../../migrations/0004_media_lifecycle.sql?raw';
 
 const e = env as unknown as Env;
 const SECRET = 'test-encryption-secret-0123456789abcdef';
@@ -13,6 +14,11 @@ const nowS = (): number => Math.floor(Date.now() / 1000);
 beforeAll(async () => {
   // Secrets are not part of wrangler.toml vars; provide one if the pool did not load .dev.vars.
   (env as unknown as { ENCRYPTION_SECRET?: string }).ENCRYPTION_SECRET = SECRET;
+  // Force the binding-only store so cleanup exercises the miniflare R2 binding
+  // even when .dev.vars carries S3 credentials for the real object store.
+  for (const k of ['MEDIA_S3_ENDPOINT', 'MEDIA_S3_BUCKET', 'MEDIA_S3_REGION', 'MEDIA_S3_ACCESS_KEY_ID', 'MEDIA_S3_SECRET_ACCESS_KEY']) {
+    delete (env as unknown as Record<string, string | undefined>)[k];
+  }
   // D1 exec() treats a leading comment-only line as an empty statement, so strip
   // comments and run each statement separately.
   const statements = schema
@@ -23,6 +29,15 @@ beforeAll(async () => {
     .map((s) => s.trim())
     .filter(Boolean);
   for (const stmt of statements) await e.DB.prepare(stmt).run();
+  // Migration 0004 adds the media lifecycle columns (expires_at, status).
+  const lifecycle = schema0004
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('--'))
+    .join('\n')
+    .split(';')
+    .map((x) => x.trim())
+    .filter(Boolean);
+  for (const stmt of lifecycle) await e.DB.prepare(stmt).run();
 });
 
 interface TargetRow {
@@ -96,7 +111,7 @@ async function seedPost(
 async function seedMedia(postId: string): Promise<{ mediaId: string; r2Key: string }> {
   const mediaId = `med_${randomId(6)}`;
   const r2Key = `media/${randomId(6)}/test.png`;
-  await e.MEDIA.put(r2Key, 'fake-image-bytes');
+  await e.MEDIA!.put(r2Key, 'fake-image-bytes');
   await e.DB.prepare(`INSERT INTO media (id, owner_id, mime, size, r2_key, created_at) VALUES (?, 'owner', 'image/png', 16, ?, ?)`).bind(mediaId, r2Key, nowS()).run();
   await e.DB.prepare('INSERT INTO post_media (post_id, media_id, position) VALUES (?,?,0)').bind(postId, mediaId).run();
   return { mediaId, r2Key };
@@ -320,15 +335,19 @@ test('media is cleaned up after retention and never for non-terminal posts', asy
 
   await runSchedulerTick(e);
   expect((await target(targetId)).status).toBe('published');
-  expect(await e.MEDIA.head(m1.r2Key)).not.toBeNull(); // within retention
+  expect(await e.MEDIA!.head(m1.r2Key)).not.toBeNull(); // within retention
 
+  // Expiry is stamped at upload: mark m1 expired and keep the post terminal.
   await e.DB.prepare('UPDATE posts SET completed_at = ? WHERE id = ?').bind(nowS() - 7200, postId).run();
+  await e.DB.prepare('UPDATE media SET expires_at = ? WHERE id = ?').bind(nowS() - 10, m1.mediaId).run();
   await runSchedulerTick(e);
 
-  expect(await e.MEDIA.head(m1.r2Key)).toBeNull();
+  expect(await e.MEDIA!.head(m1.r2Key)).toBeNull();
   expect((await e.DB.prepare('SELECT COUNT(*) AS n FROM media WHERE id = ?').bind(m1.mediaId).first<{ n: number }>())?.n).toBe(0);
   expect((await e.DB.prepare('SELECT COUNT(*) AS n FROM post_media WHERE media_id = ?').bind(m1.mediaId).first<{ n: number }>())?.n).toBe(0);
-  // Non-terminal post keeps its media.
-  expect(await e.MEDIA.head(m2.r2Key)).not.toBeNull();
+  // Non-terminal post keeps its media even once expired.
+  await e.DB.prepare('UPDATE media SET expires_at = ? WHERE id = ?').bind(nowS() - 10, m2.mediaId).run();
+  await runSchedulerTick(e);
+  expect(await e.MEDIA!.head(m2.r2Key)).not.toBeNull();
   expect((await e.DB.prepare('SELECT COUNT(*) AS n FROM media WHERE id = ?').bind(m2.mediaId).first<{ n: number }>())?.n).toBe(1);
 });

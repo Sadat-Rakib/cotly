@@ -25,4 +25,4 @@ crons = ["* * * * *"]
 APP_URL = "http://localhost:8787"
 ALLOW_REGISTRATION = "false"
 MOCK_SOCIAL_ENABLED = "true"
-MEDIA_RETENTION_HOURS = "48"
+MEDIA_RETENTION_HOURS = "168"

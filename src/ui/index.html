@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="light">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -8,14 +8,14 @@
       name="description"
       content="Cotly is a personal multi-platform scheduler. Upload once, connect your accounts, choose when it goes live, and let the cloud handle the rest."
     />
-    <meta name="theme-color" content="#e9ede3" />
+    <meta name="theme-color" content="#eef0fe" />
     <meta property="og:title" content="Cotly" />
     <meta property="og:description" content="Post once. Get on with your day." />
     <meta property="og:type" content="website" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
     <link
@@ -26,12 +26,6 @@
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23000000'/%3E%3Ccircle cx='16' cy='16' r='9.5' stroke='%23ffffff' stroke-width='2.4' stroke-linecap='round' stroke-dasharray='47.8 11.9' fill='none' transform='rotate(36 16 16)'/%3E%3Cpath d='M17.6 13.9c.4-3.1 2.4-5.4 6-6.2-.4 3.6-2.6 5.7-6 6.2z' fill='%23ffffff'/%3E%3C/svg%3E"
     />
-    <script>
-      // Apply saved theme before first paint.
-      try {
-        if (localStorage.getItem('cotly_theme') === 'dark') document.documentElement.dataset.theme = 'dark';
-      } catch {}
-    </script>
   </head>
   <body>
     <div id="root"></div>

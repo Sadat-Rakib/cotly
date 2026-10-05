@@ -1,8 +1,8 @@
 // Shared adapter plumbing: safe provider calls, error mapping, media sharing.
 // Constraint: tokens/secrets must never appear in thrown or returned error text.
-import { AwsClient } from 'aws4fetch';
 import type { Env } from '../contracts/env';
 import type { MediaRecord, PublishOutcome } from '../contracts/types';
+import { mediaSigningReady, objectGet, presignGet } from '../lib/objectstore';
 
 const FETCH_TIMEOUT_MS = 30_000;
 const RAW_SUMMARY_MAX = 300;
@@ -239,10 +239,7 @@ export async function graphTestConnection(opts: {
 }
 
 export async function mediaBytes(env: Env, media: MediaRecord): Promise<Uint8Array<ArrayBuffer>> {
-  if (!env.MEDIA) {
-    throw fail([], 'MEDIA_MISSING', 'Media storage is not enabled on this deployment yet.');
-  }
-  const obj = await env.MEDIA.get(media.r2Key);
+  const obj = await objectGet(env, media.r2Key);
   if (!obj) {
     throw fail([], 'MEDIA_MISSING', 'The attached media file could not be found in storage. Re-upload it and try again.');
   }
@@ -250,23 +247,16 @@ export async function mediaBytes(env: Env, media: MediaRecord): Promise<Uint8Arr
 }
 
 export function r2SigningConfigured(env: Env): boolean {
-  return Boolean(env.R2_ACCOUNT_ID && env.R2_ACCESS_KEY_ID && env.R2_SECRET_ACCESS_KEY);
+  return mediaSigningReady(env);
 }
 
 export const MEDIA_SIGNING_NOT_CONFIGURED =
-  'R2 public media signing is not configured. Add R2_ACCOUNT_ID, R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY so Cotly can share media with the platform.';
+  'Media signing is not configured. Add MEDIA_S3_ENDPOINT, MEDIA_S3_BUCKET, MEDIA_S3_ACCESS_KEY_ID and MEDIA_S3_SECRET_ACCESS_KEY so Cotly can share media with the platform.';
 
-// URL-based providers fetch media over HTTPS, so hand them a ~1h signed GET URL on the R2 S3 endpoint.
+// URL-based providers fetch media over HTTPS, so hand them a ~1h signed GET URL.
 export async function presignMediaGet(env: Env, r2Key: string): Promise<string> {
   if (!r2SigningConfigured(env)) {
     throw fail([], 'MEDIA_SIGNING_NOT_CONFIGURED', MEDIA_SIGNING_NOT_CONFIGURED);
   }
-  const client = new AwsClient({
-    accessKeyId: env.R2_ACCESS_KEY_ID as string,
-    secretAccessKey: env.R2_SECRET_ACCESS_KEY as string,
-  });
-  const url = new URL(`https://${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com/cotly-media/${r2Key}`);
-  url.searchParams.set('X-Amz-Expires', '3600');
-  const signed = await client.sign(new Request(url, { method: 'GET' }), { aws: { signQuery: true } });
-  return signed.url;
+  return presignGet(env, r2Key);
 }

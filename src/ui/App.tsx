@@ -1,15 +1,12 @@
 import { useCallback, useEffect, useState, type ReactElement } from 'react';
 import { api, type Me } from './api';
-import { Nav } from './components/Nav';
-import { AccountsPage } from './pages/Accounts';
+import { Sidebar } from './components/Sidebar';
 import { CalendarPage } from './pages/Calendar';
 import { ComposePage } from './pages/Compose';
-import { DiagnosticsPage } from './pages/Diagnostics';
 import { Landing } from './pages/Landing';
 import { LoginPage } from './pages/Login';
+import { ProfilePage } from './pages/Profile';
 import { QueuePage } from './pages/Queue';
-import { SettingsPage } from './pages/Settings';
-import { SetupCenterPage } from './pages/SetupCenter';
 import { SetupPage } from './pages/Setup';
 import { SignupPage } from './pages/Signup';
 import { TermsPage } from './pages/Terms';
@@ -17,21 +14,20 @@ import { ServicesPage } from './pages/Services';
 import { PrivacyPage } from './pages/Privacy';
 import { DataDeletionPage } from './pages/DataDeletion';
 
-const APP_ROUTES = new Set([
-  '/app/compose', '/app/queue', '/app/calendar', '/app/accounts', '/app/settings', '/app/diagnostics', '/app/setup',
-]);
+const APP_ROUTES = new Set(['/app/compose', '/app/queue', '/app/calendar', '/app/profile']);
 
 const PUBLIC_ROUTES = new Set(['/', '/login', '/signup', '/terms', '/services', '/privacy', '/data-deletion', '/setup']);
 
 // Pre-v0.2 links (e.g. OAuth callbacks redirecting to /accounts?connected=1)
-// land on their /app equivalents, query string preserved.
+// and pre-consolidation routes all land on their /app equivalents, query
+// string preserved. Setup/Settings/Diagnostics/Accounts now live in Profile.
 const LEGACY_ALIASES: Record<string, string> = {
   '/compose': '/app/compose',
   '/queue': '/app/queue',
   '/calendar': '/app/calendar',
-  '/accounts': '/app/accounts',
-  '/settings': '/app/settings',
-  '/diagnostics': '/app/diagnostics',
+  '/accounts': '/app/profile',
+  '/settings': '/app/profile',
+  '/diagnostics': '/app/profile',
 };
 
 const LOADING = <div className="center-screen"><div className="spinner" aria-label="Loading" /></div>;
@@ -133,10 +129,7 @@ export default function App() {
     switch (path) {
       case '/app/queue': page = <QueuePage me={me} navigate={navigate} />; break;
       case '/app/calendar': page = <CalendarPage me={me} />; break;
-      case '/app/accounts': page = <AccountsPage />; break;
-      case '/app/settings': page = <SettingsPage me={me} navigate={navigate} onLogout={logout} />; break;
-      case '/app/diagnostics': page = <DiagnosticsPage me={me} />; break;
-      case '/app/setup': page = <SetupCenterPage me={me} navigate={navigate} />; break;
+      case '/app/profile': page = <ProfilePage me={me} onLogout={logout} />; break;
       case '/app/compose': page = <ComposePage me={me} navigate={navigate} />; break;
       default: page = LOADING;
     }
@@ -144,20 +137,13 @@ export default function App() {
     page = LOADING;
   }
 
+  const isPublic = path === '/' || path === '/terms' || path === '/services' || path === '/privacy' || path === '/data-deletion';
+  const isAuth = path === '/login' || path === '/signup';
+
   return (
-    <div className="app">
-      {authed && !PUBLIC_ROUTES.has(path) && <Nav path={path} email={me.email} onNavigate={navigate} onLogout={logout} />}
-      <main
-        className={
-          path === '/' || path === '/terms' || path === '/services' || path === '/privacy' || path === '/data-deletion'
-            ? 'main main-landing'
-            : path === '/login' || path === '/signup'
-              ? 'main main-auth'
-              : authed
-                ? 'main'
-                : 'main main-bare'
-        }
-      >
+    <div className={authed && knownAppRoute ? 'app app-shell' : 'app'}>
+      {authed && knownAppRoute && <Sidebar path={path} email={me.email} onNavigate={navigate} onLogout={logout} />}
+      <main className={isPublic ? 'main main-landing' : isAuth ? 'main main-auth' : authed && knownAppRoute ? 'main main-app' : 'main main-bare'}>
         {page}
       </main>
     </div>

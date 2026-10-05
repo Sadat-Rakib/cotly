@@ -1,5 +1,6 @@
 import type { Env } from '../contracts/env';
 import { HttpError, json, readJson } from '../lib/http';
+import { mediaStorageReady, objectStore, signedFetch } from '../lib/objectstore';
 import { isValidTimezone, nowS, deploymentStatus } from './_shared';
 
 const KEYS = ['timezone', 'media_retention_hours', 'x_budget_mode', 'x_budget_monthly_usd'] as const;
@@ -24,7 +25,7 @@ async function upsert(env: Env, key: string, value: string): Promise<void> {
 
 export async function getSettings(env: Env): Promise<Response> {
   const m = await readSettings(env);
-  const retentionEnv = Number(env.MEDIA_RETENTION_HOURS) || 48;
+  const retentionEnv = Number(env.MEDIA_RETENTION_HOURS) || 168;
   return json({
     timezone: m.timezone ?? 'UTC',
     mediaRetentionHours: m.media_retention_hours !== undefined && m.media_retention_hours !== '' ? Number(m.media_retention_hours) : retentionEnv,
@@ -109,6 +110,25 @@ export async function getDiagnostics(env: Env): Promise<Response> {
     .prepare(`SELECT created_at FROM activity_log WHERE event = 'media_cleanup' ORDER BY created_at DESC, rowid DESC LIMIT 1`)
     .first<{ created_at: number }>()
     .catch(() => null);
+  // Storage diagnostics: never exceed storage silently. The cleaned total is a
+  // cumulative counter maintained by cleanup.ts in the settings KV.
+  const mediaStats = await env.DB
+    .prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS bytes FROM media`)
+    .first<{ n: number; bytes: number }>();
+  const cleanedRow = await env.DB.prepare(`SELECT value FROM settings WHERE key = 'media_cleaned_total'`).first<{ value: string }>();
+  // Worker→store connectivity probe: HEAD a well-known key and report the raw
+  // HTTP status. 404 means reachable + correctly signed (key simply absent);
+  // 403/0 means a signature or egress problem the operator must fix.
+  let probeStatus: number | null = null;
+  try {
+    const store = objectStore(env);
+    if (store?.kind === 's3') {
+      const res = await signedFetch(store, 'HEAD', '_probe/connectivity');
+      probeStatus = res.status;
+    }
+  } catch {
+    probeStatus = 0;
+  }
   return json({
     lastTickAt,
     dueCount,
@@ -120,5 +140,13 @@ export async function getDiagnostics(env: Env): Promise<Response> {
     r2Ok,
     deployment,
     cleanup: { lastCleanupAt: lastCleanup?.created_at ?? null },
+    media: {
+      objectCount: mediaStats?.n ?? 0,
+      totalBytes: mediaStats?.bytes ?? 0,
+      cleanedTotal: Number(cleanedRow?.value) || 0,
+      lastCleanupAt: lastCleanup?.created_at ?? null,
+      storageReady: mediaStorageReady(env),
+      probeStatus,
+    },
   });
 }

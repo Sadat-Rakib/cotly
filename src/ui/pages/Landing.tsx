@@ -1,7 +1,36 @@
 import { useEffect, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
-import { AtSign, CalendarDays, Check, ImageIcon, Instagram, Plus, Twitter } from 'lucide-react';
+import { CalendarDays, Check, ImageIcon, Plus } from 'lucide-react';
 import { Logo, LogoMark } from '../components/Logo';
+
+// lucide-react v1 dropped brand icons, so the mockup carries its own tiny
+// marks. All are decorative (aria-hidden) and inherit currentColor.
+function XIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M17.9 3H21l-6.8 7.8L22.2 21h-6.3l-4.9-6.4L5.4 21H2.2l7.3-8.3L2 3h6.4l4.4 5.9L17.9 3zm-1.1 16.1h1.7L7.6 4.8H5.8l11 14.3z" />
+    </svg>
+  );
+}
+
+function ThreadsIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M15.5 10.2c-.6-2.4-2-3.4-3.8-3.3-2.3.1-3.9 1.9-3.8 5.1.1 3.2 1.6 5 3.9 5 1.9 0 3.3-1.1 3.5-2.7.2-1.5-.9-2.6-2.6-2.8-1.2-.1-2.3.2-2.9.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function InstagramIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden="true">
+      <rect x="3.5" y="3.5" width="17" height="17" rx="4.5" />
+      <circle cx="12" cy="12" r="3.6" />
+      <circle cx="16.9" cy="7.1" r="1" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
 
 interface Props {
   navigate: (p: string) => void;
@@ -139,9 +168,9 @@ function ComposeMockup() {
           <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#1e1b4b]/45">Destinations</div>
           <div className="flex items-center gap-2.5 mt-2">
             {[
-              { icon: Twitter, label: 'X' },
-              { icon: AtSign, label: 'Threads' },
-              { icon: Instagram, label: 'Instagram' },
+              { icon: XIcon, label: 'X' },
+              { icon: ThreadsIcon, label: 'Threads' },
+              { icon: InstagramIcon, label: 'Instagram' },
             ].map(({ icon: Icon, label }) => (
               <span
                 key={label}

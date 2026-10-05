@@ -128,7 +128,7 @@ export function QueuePage({ me, navigate }: Props) {
           <span>
             {new Set(needsReconnect.map((t) => t.provider)).size} account(s) need reconnection.
           </span>
-          <button className="btn btn-sm" onClick={() => navigate('/app/accounts')}>Reconnect</button>
+          <button className="btn btn-sm" onClick={() => navigate('/app/profile')}>Reconnect</button>
         </div>
       )}
 
@@ -179,7 +179,7 @@ export function QueuePage({ me, navigate }: Props) {
                           Retry {providerLabel(t.provider)}
                         </button>
                       ))}
-                      <button className="btn btn-sm" onClick={() => navigate('/app/accounts')}>
+                      <button className="btn btn-sm" onClick={() => navigate('/app/profile')}>
                         {(() => {
                         const badProviders = [...new Set(bad.map((t) => t.provider))];
                         const single = badProviders.length === 1 ? badProviders[0] : undefined;

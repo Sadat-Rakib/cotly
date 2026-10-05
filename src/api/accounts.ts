@@ -255,7 +255,7 @@ export async function oauthCallback(req: Request, env: Env, provider: string): P
   // Response.redirect() only accepts a numeric status in the DOM lib types, so
   // build the 302 by hand to attach the page-choice cookie.
   const redirect = (query: string, headers: Record<string, string> = {}): Response =>
-    new Response(null, { status: 302, headers: { Location: `${env.APP_URL}/accounts?${query}`, ...headers } });
+    new Response(null, { status: 302, headers: { Location: `${env.APP_URL}/app/profile?${query}`, ...headers } });
   const fail = (message: string): Response => redirect(`error=${encodeURIComponent(message)}`);
   try {
     const state = params.get('state') ?? '';
@@ -264,11 +264,11 @@ export async function oauthCallback(req: Request, env: Env, provider: string): P
       : null;
     if (row) await env.DB.prepare('DELETE FROM oauth_states WHERE state = ?').bind(state).run();
     if (!row || row.provider !== provider || row.expires_at <= nowS()) {
-      return fail('This connection attempt expired or was already used. Start again from the Accounts page.');
+      return fail('This connection attempt expired or was already used. Start again from the Profile page.');
     }
     const ownerId = row.owner_id;
     if (!ownerId) {
-      return fail('This connection attempt predates multi-user sign-in. Start again from the Accounts page.');
+      return fail('This connection attempt predates multi-user sign-in. Start again from the Profile page.');
     }
     const adapter = getAdapter(provider as Provider);
     if (!adapter.handleCallback) return fail(`${PROVIDER_LABEL[provider as Provider] ?? provider} does not support OAuth sign-in.`);

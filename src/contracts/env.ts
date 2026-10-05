@@ -1,6 +1,8 @@
 export interface Env {
   DB: D1Database;
-  MEDIA: R2Bucket;
+  // R2 binding (local dev / miniflare). Production uses the S3-compatible
+  // MEDIA_S3_* credentials below; the binding is optional and may be absent.
+  MEDIA?: R2Bucket;
   ASSETS: Fetcher;
 
   APP_URL: string;
@@ -29,4 +31,12 @@ export interface Env {
   R2_ACCOUNT_ID?: string;
   R2_ACCESS_KEY_ID?: string;
   R2_SECRET_ACCESS_KEY?: string;
+
+  // S3-compatible object storage (Neon Object Storage). Preferred production
+  // backend: presigned PUT/GET/DELETE against any SigV4 endpoint.
+  MEDIA_S3_ENDPOINT?: string;
+  MEDIA_S3_BUCKET?: string;
+  MEDIA_S3_REGION?: string;
+  MEDIA_S3_ACCESS_KEY_ID?: string;
+  MEDIA_S3_SECRET_ACCESS_KEY?: string;
 }

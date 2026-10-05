@@ -1,5 +1,6 @@
 import type { Env } from '../contracts/env';
 import type { Provider } from '../contracts/types';
+import { mediaSigningReady, mediaStorageReady } from '../lib/objectstore';
 
 export const nowS = (): number => Math.floor(Date.now() / 1000);
 
@@ -15,6 +16,7 @@ export interface DeploymentStatus {
   encryptionSecretSet: boolean;
   sessionSecretSet: boolean;
   mediaPresignReady: boolean;
+  mediaSigningReady: boolean;
 }
 
 // Real probes only — never report a green check the deployment did not earn.
@@ -47,7 +49,8 @@ export async function deploymentStatus(env: Env): Promise<DeploymentStatus> {
     appUrl: env.APP_URL,
     encryptionSecretSet: Boolean(env.ENCRYPTION_SECRET),
     sessionSecretSet: Boolean(env.SESSION_SECRET),
-    mediaPresignReady: Boolean(env.R2_ACCOUNT_ID && env.R2_ACCESS_KEY_ID && env.R2_SECRET_ACCESS_KEY),
+    mediaPresignReady: mediaStorageReady(env),
+    mediaSigningReady: mediaSigningReady(env),
   };
 }
 

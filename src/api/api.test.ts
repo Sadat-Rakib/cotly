@@ -3,9 +3,11 @@ import { env } from 'cloudflare:test';
 import type { Env } from '../contracts/env';
 import { encryptSecret, randomId } from '../lib/crypto';
 import { handleApi } from './router';
+import { cleanupExpiredMedia } from '../engine/cleanup';
 import schema from '../../migrations/0001_init.sql?raw';
 import schema0002 from '../../migrations/0002_user_name.sql?raw';
 import schema0003 from '../../migrations/0003_user_ownership.sql?raw';
+import schema0004 from '../../migrations/0004_media_lifecycle.sql?raw';
 
 // NOTE: this pool runs with per-test isolated storage — writes inside a test are
 // rolled back when it ends, while writes in beforeAll persist for every test.
@@ -44,13 +46,22 @@ function captureCookies(res: Response): void {
   if (c.cotly_csrf) csrf = c.cotly_csrf;
 }
 
-async function api(path: string, method: string, body?: unknown, opts: { auth?: boolean; csrf?: boolean; cookie?: string; asUser?: 'B'; csrfToken?: string } = {}): Promise<Response> {
+async function api(path: string, method: string, body?: unknown, opts: { auth?: boolean; csrf?: boolean; cookie?: string; asUser?: 'B'; csrfToken?: string; raw?: boolean } = {}): Promise<Response> {
   const headers: Record<string, string> = {};
-  if (body !== undefined) headers['content-type'] = 'application/json';
+  if (body !== undefined) headers['content-type'] = opts.raw ? 'application/octet-stream' : 'application/json';
   if (opts.auth && cookieHeader) headers['cookie'] = opts.cookie ?? cookieHeader;
   if (opts.csrf) headers['x-csrf'] = opts.csrfToken ?? (opts.asUser === 'B' ? userBCsrf : csrf);
-  const req = new Request(`${BASE}${path}`, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
+  const req = new Request(`${BASE}${path}`, { method, headers, body: body !== undefined ? (opts.raw ? (body as string) : JSON.stringify(body)) : undefined });
   return handleApi(req, e, ctx);
+}
+
+// Undefined values delete the key, matching setup.test.ts's env isolation.
+function setEnv(values: Record<string, string | undefined>): void {
+  const v = env as unknown as Record<string, string | undefined>;
+  for (const [k, val] of Object.entries(values)) {
+    if (val === undefined) delete v[k];
+    else v[k] = val;
+  }
 }
 
 beforeAll(async () => {
@@ -69,6 +80,9 @@ beforeAll(async () => {
   for (const stmt of statements) await e.DB.prepare(stmt).run();
   await e.DB.prepare(schema0002.trim()).run();
   for (const stmt of schema0003.split('\n').filter((l) => !l.trimStart().startsWith('--')).join('\n').split(';').map((s) => s.trim()).filter(Boolean)) {
+    await e.DB.prepare(stmt).run();
+  }
+  for (const stmt of schema0004.split('\n').filter((l) => !l.trimStart().startsWith('--')).join('\n').split(';').map((s) => s.trim()).filter(Boolean)) {
     await e.DB.prepare(stmt).run();
   }
 
@@ -197,6 +211,7 @@ test('multi-user isolation: a second user sees none of the owner data', async ()
 test('media upload and its URL are scoped to the uploading user', async () => {
   // Owner confirms a media row, then user B must get a plain 404 for its URL.
   (env as unknown as Record<string, string | undefined>).ALLOW_REGISTRATION = 'true';
+  setEnv({ MEDIA_S3_ENDPOINT: undefined, MEDIA_S3_BUCKET: undefined, MEDIA_S3_ACCESS_KEY_ID: undefined, MEDIA_S3_SECRET_ACCESS_KEY: undefined });
   const mediaId = `med_${randomId(8)}`;
   await e.DB
     .prepare(`INSERT INTO media (id, owner_id, mime, size, original_filename, r2_key, created_at) VALUES (?, 'owner', 'image/png', 10, 'own.png', 'media/own/iso.png', ?)`)
@@ -204,8 +219,10 @@ test('media upload and its URL are scoped to the uploading user', async () => {
     .run();
   const b = { auth: true, cookie: userBCookie, asUser: 'B' as const };
   expect((await api(`/api/media/${mediaId}/url`, 'GET', undefined, b)).status).toBe(404);
-  // Owner passes the ownership gate and reaches the storage check (no R2 creds in this env -> 503, not 404).
-  expect((await api(`/api/media/${mediaId}/url`, 'GET', undefined, { auth: true })).status).toBe(503);
+  // Owner passes the ownership gate and gets a URL (binding-only env -> worker-relayed raw URL).
+  const ownerUrl = await api(`/api/media/${mediaId}/url`, 'GET', undefined, { auth: true });
+  expect(ownerUrl.status).toBe(200);
+  expect(((await ownerUrl.json()) as { url: string }).url).toContain(`/api/media/${mediaId}/raw`);
 });
 
 test('logout invalidates the session server-side', async () => {
@@ -390,6 +407,61 @@ test('media endpoints degrade cleanly without R2 credentials', async () => {
   }
 });
 
+test('media lifecycle: relay upload, expiry stamping, cleanup idempotency, storage diagnostics', async () => {
+  // Exercise the binding-only path deterministically.
+  setEnv({ MEDIA_S3_ENDPOINT: undefined, MEDIA_S3_BUCKET: undefined, MEDIA_S3_ACCESS_KEY_ID: undefined, MEDIA_S3_SECRET_ACCESS_KEY: undefined });
+  // Default retention: 7 days (the deployment default, no explicit setting).
+  const up = await api('/api/media/upload-url', 'POST', { filename: 'lifecycle.png', mime: 'image/png' }, { auth: true, csrf: true });
+  expect(up.status).toBe(200);
+  const { mediaId, uploadUrl, r2Key } = (await up.json()) as { mediaId: string; uploadUrl: string; r2Key: string };
+
+  // Binding-only test env: the upload URL is the worker relay.
+  expect(uploadUrl).toContain(`/api/media/upload/${mediaId}`);
+  const put = await api(uploadUrl, 'PUT', 'fake-png-bytes', { auth: true, raw: true });
+  expect(put.status).toBe(200);
+
+  const confirm = await api('/api/media/confirm', 'POST', { mediaId, mime: 'image/png', size: 15, filename: 'lifecycle.png', r2Key }, { auth: true, csrf: true });
+  expect(confirm.status).toBe(200);
+  const confirmed = (await confirm.json()) as { expiresAt: number };
+  const row = await e.DB
+    .prepare('SELECT owner_id, expires_at, status, size FROM media WHERE id = ?')
+    .bind(mediaId)
+    .first<{ owner_id: string; expires_at: number | null; status: string; size: number }>();
+  expect(row?.owner_id).toBe('owner');
+  expect(row?.status).toBe('ready');
+  expect(row?.size).toBe(15);
+  // expires_at = created_at + 168h (7 days), stamped at upload.
+  const created = await e.DB.prepare('SELECT created_at FROM media WHERE id = ?').bind(mediaId).first<{ created_at: number }>();
+  expect(row?.expires_at).toBe((created?.created_at ?? 0) + 168 * 3600);
+  expect(confirmed.expiresAt).toBe(row?.expires_at);
+
+  // Session-authenticated read streams the object back.
+  const urlRes = await api(`/api/media/${mediaId}/url`, 'GET', undefined, { auth: true });
+  expect(urlRes.status).toBe(200);
+  const { url } = (await urlRes.json()) as { url: string };
+  expect(url).toContain(`/api/media/${mediaId}/raw`);
+  const raw = await api(url, 'GET', undefined, { auth: true });
+  expect(raw.status).toBe(200);
+  expect(await raw.text()).toBe('fake-png-bytes');
+
+  // Expired media (not referenced by a post) is deleted exactly once.
+  await e.DB.prepare('UPDATE media SET expires_at = ? WHERE id = ?').bind(nowS() - 10, mediaId).run();
+  await cleanupExpiredMedia(e, nowS());
+  expect((await e.DB.prepare('SELECT COUNT(*) AS n FROM media WHERE id = ?').bind(mediaId).first<{ n: number }>())?.n).toBe(0);
+  expect(await e.MEDIA!.head(r2Key)).toBeNull();
+
+  // Idempotent: a second pass deletes nothing extra.
+  const again = await cleanupExpiredMedia(e, nowS());
+  expect(again).toBe(0);
+
+  // Storage diagnostics reflect reality, including the cumulative cleaned count.
+  const diag = await api('/api/diagnostics', 'GET', undefined, { auth: true });
+  const body = (await diag.json()) as { media: { objectCount: number; totalBytes: number; cleanedTotal: number; storageReady: boolean } };
+  expect(body.media.storageReady).toBe(true);
+  expect(body.media.cleanedTotal).toBe(1);
+  expect(body.media.objectCount).toBe(0);
+});
+
 test('oauth start refuses unconfigured providers, callback redirects with error', async () => {
   // linkedin has no credentials in the test env — the only still-unconfigured OAuth provider here.
   const li = await api('/api/oauth/linkedin/start', 'GET', undefined, { auth: true });
@@ -402,7 +474,7 @@ test('oauth start refuses unconfigured providers, callback redirects with error'
 
   const cb = await api('/oauth/facebook/callback?code=abc&state=nope', 'GET');
   expect(cb.status).toBe(302);
-  expect(cb.headers.get('location')).toContain('/accounts?error=');
+  expect(cb.headers.get('location')).toContain('/app/profile?error=');
 });
 
 test('login rate limit trips after 10 bad attempts', async () => {
