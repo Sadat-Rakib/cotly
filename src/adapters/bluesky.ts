@@ -530,7 +530,13 @@ export class BlueskyAdapter implements PlatformAdapter {
         return { ok: false, detail: 'This Bluesky connection predates Cotly’s current sign-in and cannot be renewed. Reconnect Bluesky.' };
       }
       const pds = typeof account.meta.pdsUrl === 'string' ? account.meta.pdsUrl : AUTH_SERVER;
-      const resp = await dpopXrpc(env, account.meta, account.accessToken, 'GET', `${pds}/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(account.externalId)}`);
+      let resp = await dpopXrpc(env, account.meta, account.accessToken, 'GET', `${pds}/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(account.externalId)}`);
+      if (!resp.ok) {
+        // TEMP DIAGNOSTIC: same call against the bsky.social entryway
+        const alt = await dpopXrpc(env, account.meta, account.accessToken, 'GET', `${AUTH_SERVER}/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(account.externalId)}`);
+        console.error('[bluesky-dbg] PDS call:', resp.status, resp.raw.slice(0, 120), '| entryway call:', alt.status, alt.raw.slice(0, 120));
+        if (alt.ok) resp = alt;
+      }
       if (resp.ok) {
         const raw = (resp.data as { handle?: unknown } | null)?.handle;
         const handle = redact(typeof raw === 'string' && raw ? raw : account.displayName, secrets);
