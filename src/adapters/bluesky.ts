@@ -532,10 +532,11 @@ export class BlueskyAdapter implements PlatformAdapter {
       const pds = typeof account.meta.pdsUrl === 'string' ? account.meta.pdsUrl : AUTH_SERVER;
       let resp = await dpopXrpc(env, account.meta, account.accessToken, 'GET', `${pds}/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(account.externalId)}`);
       if (!resp.ok) {
-        // TEMP DIAGNOSTIC: same call against the bsky.social entryway
-        const alt = await dpopXrpc(env, account.meta, account.accessToken, 'GET', `${AUTH_SERVER}/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(account.externalId)}`);
-        console.error('[bluesky-dbg] PDS call:', resp.status, resp.raw.slice(0, 120), '| entryway call:', alt.status, alt.raw.slice(0, 120));
-        if (alt.ok) resp = alt;
+        // TEMP DIAGNOSTIC: native + proxied endpoints against both origins
+        const sessPds = await dpopXrpc(env, account.meta, account.accessToken, 'GET', `${pds}/xrpc/com.atproto.server.getSession`);
+        const sessEntry = await dpopXrpc(env, account.meta, account.accessToken, 'GET', `${AUTH_SERVER}/xrpc/com.atproto.server.getSession`);
+        console.error('[bluesky-dbg] getSession PDS:', sessPds.status, sessPds.raw.slice(0, 100), '| entryway:', sessEntry.status, sessEntry.raw.slice(0, 100));
+        if (sessEntry.ok) resp = sessEntry;
       }
       if (resp.ok) {
         const raw = (resp.data as { handle?: unknown } | null)?.handle;
