@@ -200,6 +200,57 @@ export async function connectBluesky(req: Request, env: Env): Promise<Response> 
   return json(saved, 201);
 }
 
+// POST /api/accounts/instagram/token — connect Instagram with a user-supplied
+// access token (for example from Meta's Access Token Tool or the developer
+// console). The token is validated against the Instagram Graph API, exchanged
+// for a long-lived token when possible, and stored encrypted for this user.
+export async function connectInstagramToken(req: Request, env: Env): Promise<Response> {
+  const body = await readJson(req);
+  const accessToken = String(body.accessToken ?? '').trim();
+  if (!accessToken || accessToken.length < 20) {
+    throw new HttpError(400, 'Paste a valid Instagram access token. You can generate one in the Meta developer console.');
+  }
+  const userId = await requireSession(env, req);
+  const me = await fetch('https://graph.instagram.com/v21.0/me?fields=user_id,username,account_type,profile_picture_url', {
+    headers: { authorization: `Bearer ${accessToken}` },
+  }).then((r) => r.json().catch(() => ({})));
+  const profile = (me ?? {}) as { user_id?: string; id?: string; username?: string; account_type?: string; profile_picture_url?: string; error?: { message?: string } };
+  if (!profile || (!profile.user_id && !profile.id)) {
+    const detail = profile.error?.message ?? 'Instagram rejected this token.';
+    throw new HttpError(400, `Cotly could not read the Instagram profile for that token: ${detail}`);
+  }
+  if (!['BUSINESS', 'CREATOR', 'MEDIA_CREATOR'].includes(String(profile.account_type))) {
+    throw new HttpError(400, 'Instagram publishing requires a Business or Creator account. Switch the account type in the Instagram app and try again.');
+  }
+  // Short-lived tokens are exchanged for long-lived ones; already long-lived
+  // tokens fail the exchange and are stored as-is.
+  let stored = accessToken;
+  let expiresAt: number | undefined;
+  const ll = await fetch(
+    `https://graph.instagram.com/access_token?grant_type=ig_exchange_token&client_secret=${encodeURIComponent(env.INSTAGRAM_CLIENT_SECRET ?? '')}&access_token=${encodeURIComponent(accessToken)}`,
+  ).then((r) => r.json().catch(() => ({})));
+  const exchanged = (ll ?? {}) as { access_token?: string; expires_in?: number };
+  if (typeof exchanged.access_token === 'string' && exchanged.access_token.length > 20) {
+    stored = exchanged.access_token;
+    if (typeof exchanged.expires_in === 'number') expiresAt = Math.floor(Date.now() / 1000) + exchanged.expires_in;
+  }
+  const igUserId = profile.user_id ?? (profile.id as string);
+  const saved = await upsertAccount(
+    env,
+    userId,
+    'instagram',
+    {
+      externalId: igUserId,
+      displayName: profile.username || 'Instagram account',
+      ...(profile.profile_picture_url ? { avatarUrl: profile.profile_picture_url } : {}),
+      meta: { accountType: profile.account_type },
+    },
+    { accessToken: stored, ...(expiresAt ? { expiresAt } : {}) },
+    'instagram_business_basic,instagram_business_content_publish',
+  );
+  return json(saved, 201);
+}
+
 export async function connectMock(req: Request, env: Env): Promise<Response> {
   if (env.MOCK_SOCIAL_ENABLED !== 'true') throw new HttpError(404, 'Mock accounts are not enabled on this server.');
   const userId = await requireSession(env, req);

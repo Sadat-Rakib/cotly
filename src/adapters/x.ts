@@ -191,12 +191,16 @@ export class XAdapter implements PlatformAdapter {
       await this.assertWithinBudget(env);
 
       const images = input.media.filter((m) => m.mime.startsWith('image/'));
-      if (input.media.some((m) => m.mime.startsWith('video/'))) {
-        throw fail(secrets, 'VIDEO_UNSUPPORTED', 'X video publishing is not supported by Cotly yet. Remove the video or publish without it.');
+      const videos = input.media.filter((m) => m.mime.startsWith('video/'));
+      if (videos.length > 1 || (videos.length > 0 && images.length > 0)) {
+        throw fail(secrets, 'TOO_MANY_MEDIA', 'X accepts one video or up to four images per post — not a mix. Adjust the attachments and retry.');
       }
       const mediaIds: string[] = [];
+      if (videos.length === 1) {
+        mediaIds.push(await this.uploadMedia(env, videos[0]!, secrets, true));
+      }
       for (const image of images) {
-        mediaIds.push(await this.uploadImage(env, image, secrets));
+        mediaIds.push(await this.uploadMedia(env, image, secrets, false));
       }
 
       const body: Record<string, unknown> = { text: input.caption };
@@ -211,7 +215,7 @@ export class XAdapter implements PlatformAdapter {
       if (!created || typeof created.id !== 'string') {
         throw fail(secrets, 'NO_POST_ID', 'X did not return a post id for the published content.', resp.raw);
       }
-      await this.recordUsage(env, images.length);
+      await this.recordUsage(env, images.length + videos.length);
       return { kind: 'confirmed', externalId: created.id, ...(resp.raw ? { raw: resp.raw } : {}) };
     } catch (e) {
       return outcomeFromError(e);
@@ -254,36 +258,85 @@ export class XAdapter implements PlatformAdapter {
     }
   }
 
-  // v1.1 INIT -> APPEND -> FINALIZE with the user token. Videos return a
-  // processing_info job, which Cotly cannot wait on synchronously.
-  private async uploadImage(env: Env, media: MediaRecord, secrets: Secrets): Promise<string> {
+  // v1.1 INIT -> APPEND (chunked) -> FINALIZE with the user token. Videos are
+  // uploaded with the tweet_video category and processed asynchronously — the
+  // STATUS endpoint is polled briefly, and a still-processing job becomes a
+  // retryable failure so the ladder retries without duplicating the post.
+  private async uploadMedia(env: Env, media: MediaRecord, secrets: Secrets, isVideo: boolean): Promise<string> {
     const bytes = await mediaBytes(env, media);
-    const init = await httpJson(`${UPLOAD}?command=INIT&total_bytes=${bytes.byteLength}&media_type=${encodeURIComponent(media.mime)}`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${secrets[0] ?? ''}` },
-    });
+    const category = isVideo ? 'tweet_video' : 'tweet_image';
+    const init = await httpJson(
+      `${UPLOAD}?command=INIT&total_bytes=${bytes.byteLength}&media_type=${encodeURIComponent(media.mime)}&media_category=${category}`,
+      {
+        method: 'POST',
+        headers: { authorization: `Bearer ${secrets[0] ?? ''}` },
+      },
+    );
     if (!init.ok) mapApiError(init, secrets);
     const mediaId = (init.data as { media_id_string?: unknown } | null)?.media_id_string;
     if (typeof mediaId !== 'string' || !mediaId) {
-      throw fail(secrets, 'UPLOAD_INIT_FAILED', 'X did not provide an upload location for the image.', init.raw);
+      throw fail(secrets, 'UPLOAD_INIT_FAILED', 'X did not provide an upload location for the media.', init.raw);
     }
-    const append = await httpJson(`${UPLOAD}?command=APPEND&media_id=${encodeURIComponent(mediaId)}`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${secrets[0] ?? ''}`, 'content-type': 'application/octet-stream' },
-      body: bytes,
-    });
-    if (!append.ok) {
-      throw failRetryable(secrets, 'IMAGE_UPLOAD_FAILED', 'Cotly could not upload the image to X. Cotly will retry automatically.', append.raw);
+    // APPEND accepts up to 5 MB per segment.
+    const CHUNK = 4 * 1024 * 1024;
+    for (let i = 0, seg = 0; i < bytes.byteLength; i += CHUNK, seg++) {
+      const chunk = bytes.subarray(i, Math.min(i + CHUNK, bytes.byteLength));
+      const append = await httpJson(`${UPLOAD}?command=APPEND&media_id=${encodeURIComponent(mediaId)}&segment_index=${seg}`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${secrets[0] ?? ''}`, 'content-type': 'application/octet-stream' },
+        body: chunk,
+      });
+      if (!append.ok) {
+        throw failRetryable(
+          secrets,
+          'MEDIA_UPLOAD_FAILED',
+          'Cotly could not upload the media to X. Cotly will retry automatically.',
+          append.raw,
+        );
+      }
     }
     const finalize = await httpJson(`${UPLOAD}?command=FINALIZE&media_id=${encodeURIComponent(mediaId)}`, {
       method: 'POST',
       headers: { authorization: `Bearer ${secrets[0] ?? ''}` },
     });
     if (!finalize.ok) mapApiError(finalize, secrets);
-    const processing = (finalize.data as { processing_info?: unknown } | null)?.processing_info;
+    const processing = (finalize.data as { processing_info?: { state?: unknown; check_after_secs?: unknown } } | null)?.processing_info;
     if (processing) {
-      throw fail(secrets, 'MEDIA_PROCESSING', 'This media needs X-side processing, which Cotly does not support yet. Publish it as a plain image.');
+      await this.awaitProcessing(mediaId, processing, secrets);
     }
     return mediaId;
+  }
+
+  // Poll STATUS until succeeded (bounded within this request); a failure or a
+  // timeout becomes a retryable outcome so nothing is published half-baked.
+  private async awaitProcessing(
+    mediaId: string,
+    info: { state?: unknown; check_after_secs?: unknown },
+    secrets: Secrets,
+  ): Promise<void> {
+    const stateOf = (i: { state?: unknown }) => (typeof i.state === 'string' ? i.state : 'pending');
+    let state = stateOf(info);
+    let wait = typeof info.check_after_secs === 'number' ? Math.min(info.check_after_secs, 10) : 5;
+    const deadline = Date.now() + 90_000;
+    while (state !== 'succeeded' && Date.now() < deadline) {
+      if (state === 'failed') {
+        throw failRetryable(secrets, 'MEDIA_PROCESSING', 'X could not process this media. Cotly will retry automatically.');
+      }
+      await new Promise((r) => setTimeout(r, wait * 1000));
+      const status = await httpJson(`${UPLOAD}?command=STATUS&media_id=${encodeURIComponent(mediaId)}`, {
+        method: 'GET',
+        headers: { authorization: `Bearer ${secrets[0] ?? ''}` },
+      });
+      if (!status.ok) {
+        throw failRetryable(secrets, 'MEDIA_PROCESSING', 'Cotly could not check the media processing state on X. Cotly will retry automatically.', status.raw);
+      }
+      const next = (status.data as { processing_info?: { state?: unknown; check_after_secs?: unknown } } | null)?.processing_info;
+      if (!next) break;
+      state = stateOf(next);
+      wait = typeof next.check_after_secs === 'number' ? Math.min(next.check_after_secs, 10) : 5;
+    }
+    if (state !== 'succeeded') {
+      throw failRetryable(secrets, 'MEDIA_PROCESSING', 'This media is still processing on X. Cotly will retry shortly.');
+    }
   }
 }

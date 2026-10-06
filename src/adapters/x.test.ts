@@ -69,7 +69,8 @@ const mediaEnv = (over: Partial<Env> = {}): Env =>
     ...env,
     MEDIA: {
       get: async (key: string) => ({
-        arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer,
+        // objectstore.objectGet wraps obj.body in a Response.
+        body: new Response(new Uint8Array([1, 2, 3, 4]).buffer).body,
         key,
       }),
     },
@@ -166,11 +167,11 @@ describe('X adapter', () => {
     expect(out.kind).toBe('confirmed');
     const urls = calls.map((c) => c.url);
     expect(urls[0]).toContain('command=INIT');
+    expect(urls[0]).toContain('media_category=tweet_image');
     expect(urls[1]).toContain('command=APPEND');
     expect(urls[2]).toContain('command=FINALIZE');
     const tweetBody = JSON.parse(String(calls[3]?.init?.body));
     expect(tweetBody.media.media_ids).toEqual(['media-1']);
-    void bytes;
   });
 
   it('tests the connection with a free users/me read', async () => {

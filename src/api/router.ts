@@ -53,6 +53,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     return accounts.testAccount(env, userId, seg[2] as string);
   }
   if (method === 'POST' && path === '/api/accounts/bluesky') return accounts.connectBluesky(req, env);
+  if (method === 'POST' && path === '/api/accounts/instagram/token') return accounts.connectInstagramToken(req, env);
   if (method === 'POST' && path === '/api/accounts/mock') return accounts.connectMock(req, env);
   if (method === 'GET' && path === '/api/accounts/facebook/pages') return accounts.listFacebookPages(req, env);
   if (method === 'POST' && path === '/api/accounts/facebook/pages') return accounts.selectFacebookPage(req, env);

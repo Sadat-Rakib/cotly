@@ -67,10 +67,17 @@ export function QueuePage({ me, navigate }: Props) {
   useEffect(() => {
     api<Account[]>('/api/accounts').then(setAccounts).catch(() => {});
   }, []);
+  // Poll quickly while anything is in flight (publish-now / claimed /
+  // publishing / retrying) so status changes show up within seconds; drop to
+  // a slow idle poll otherwise.
+  const hasInFlight = useMemo(
+    () => posts.some((p) => p.targets.some((t) => ['scheduled', 'claimed', 'publishing', 'retrying'].includes(t.status))),
+    [posts],
+  );
   useEffect(() => {
-    const id = window.setInterval(() => { void load(); }, 30_000);
+    const id = window.setInterval(() => { void load(); }, hasInFlight ? 5_000 : 30_000);
     return () => window.clearInterval(id);
-  }, [load]);
+  }, [load, hasInFlight]);
 
   const bucketed = useMemo(() => {
     const today = dayKey(Date.now() / 1000, tz);

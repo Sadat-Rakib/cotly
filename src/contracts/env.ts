@@ -15,6 +15,9 @@ export interface Env {
 
   META_CLIENT_ID?: string;
   META_CLIENT_SECRET?: string;
+  // Facebook Login for Business configuration id — required for Business-type
+  // Meta apps; carries the Pages permissions configured in the Meta dashboard.
+  FACEBOOK_CONFIG_ID?: string;
   THREADS_CLIENT_ID?: string;
   THREADS_CLIENT_SECRET?: string;
   LINKEDIN_CLIENT_ID?: string;

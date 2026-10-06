@@ -5,6 +5,7 @@ import { randomId } from '../lib/crypto';
 import { HttpError, json, readJson } from '../lib/http';
 import { requireSession } from '../lib/sessions';
 import { isValidTimezone, nowS, PROVIDER_LABEL } from './_shared';
+import { runSchedulerTick } from '../engine/cron';
 
 interface FieldError {
   field: string;
@@ -177,6 +178,18 @@ export async function create(req: Request, env: Env, userId: string): Promise<Re
       )
       .bind(`tgt_${randomId(8)}`, postId, acc.id, acc.provider, isStr(t.captionOverride) ? t.captionOverride : null, scheduledAt, now, now)
       .run();
+  }
+  // Publish-now must actually publish: run a scheduler tick synchronously so
+  // the response reflects the real outcome (published/failed) instead of
+  // silently sitting in the queue for up to a minute. The tick is idempotent
+  // and claims only due targets, so scheduled posts are untouched. A tick
+  // failure never fails the POST — the cron retries on its own.
+  if (mode === 'now') {
+    try {
+      await runSchedulerTick(env);
+    } catch {
+      // fall through: the next cron tick will pick this target up
+    }
   }
   return json({ postId }, 201);
 }

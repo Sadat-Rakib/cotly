@@ -62,7 +62,7 @@ export function SignupPage({ onDone, onNav }: Props) {
         </label>
         <div className="mt-0">
           <PasswordField value={password} onChange={setPassword} autoComplete="new-password" />
-          <span className="text-xs text-[#1e1b4b]/40 mt-1 block">At least 8 characters.</span>
+          <span className="text-xs text-[#1e1b4b]/60 mt-1 block">At least 8 characters.</span>
         </div>
 
         {err && (
@@ -80,7 +80,7 @@ export function SignupPage({ onDone, onNav }: Props) {
         </button>
       </form>
 
-      <p className="text-sm text-white/50 text-center mt-6">
+      <p className="text-sm text-[#1e1b4b]/75 text-center mt-6">
         Existing user?{' '}
         <a
           href="/login"

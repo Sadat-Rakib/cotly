@@ -35,6 +35,11 @@ export class FacebookAdapter implements PlatformAdapter {
     u.searchParams.set('state', state);
     u.searchParams.set('response_type', 'code');
     u.searchParams.set('scope', SCOPE);
+    // Business-type Meta apps authorize through a Login for Business
+    // configuration; without it the dialog rejects the request.
+    if (env.FACEBOOK_CONFIG_ID) {
+      u.searchParams.set('config_id', env.FACEBOOK_CONFIG_ID);
+    }
     return { url: u.toString() };
   }
 

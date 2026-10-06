@@ -47,8 +47,9 @@ export const CAPABILITIES: Record<Provider, PlatformCapabilities> = {
     text: true,
     images: true,
     maxImages: 10,
+    // Single image OR single video (published as a Reel) per post.
     video: true,
-    maxVideoMB: 100,
+    maxVideoMB: 512,
     maxCaptionChars: 2200,
     mediaRequired: true,
     directPublish: true,
@@ -57,10 +58,9 @@ export const CAPABILITIES: Record<Provider, PlatformCapabilities> = {
     text: true,
     images: true,
     maxImages: 4,
-    // Video needs X-side media processing that Cotly cannot wait on; the
-    // adapter rejects it, so block it in the composer too.
-    video: false,
-    maxVideoMB: 0,
+    // One video (tweet_video category) OR up to four images per post.
+    video: true,
+    maxVideoMB: 512,
     maxCaptionChars: 280,
     mediaRequired: false,
     directPublish: true,

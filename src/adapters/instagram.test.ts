@@ -105,12 +105,28 @@ describe('instagram adapter', () => {
     expect(body).toContain('caption=Hello+Instagram');
   });
 
-  it('rejects image-less and video posts without calling the provider', async () => {
+  it('rejects media-less posts without calling the provider', async () => {
     const calls = stubFetch([]);
     const none = await new InstagramAdapter().publish(env, input());
     expect(none.kind).toBe('failed');
-    const video = await new InstagramAdapter().publish(env, input({ media: [media({ mime: 'video/mp4' })] }));
-    expect(video.kind).toBe('failed');
+    expect(calls.length).toBe(0);
+  });
+
+  it('creates a REELS container for a video post via a signed URL', async () => {
+    const calls = stubFetch([() => jsonRes(200, { id: 'ct_ig_reel' })]);
+    const out = await new InstagramAdapter().publish(env, input({ media: [media({ mime: 'video/mp4' })] }));
+    expect(out.kind).toBe('pending');
+    expect((out as { externalId: string }).externalId).toBe('ct_ig_reel');
+    const body = decodeURIComponent(String(calls[0]?.init?.body));
+    expect(body).toContain('media_type=REELS');
+    expect(body).toContain('video_url=');
+    expect(body).toContain('share_to_feed=1');
+  });
+
+  it('rejects mixed media (image + video) without calling the provider', async () => {
+    const calls = stubFetch([]);
+    const mixed = await new InstagramAdapter().publish(env, input({ media: [media(), media({ mime: 'video/mp4' })] }));
+    expect(mixed.kind).toBe('failed');
     expect(calls.length).toBe(0);
   });
 

@@ -206,10 +206,16 @@ test('multi-user isolation: a second user sees none of the owner data', async ()
   const bPosts = await api('/api/posts', 'GET', undefined, b);
   expect(await bPosts.json()).toEqual([]);
 
-  // Owner still sees their own post
-  const ownerList = await api('/api/posts', 'GET', undefined, { auth: true });
-  const ownerPosts = (await ownerList.json()) as Array<{ id: string }>;
-  expect(ownerPosts.some((p) => p.id === postId)).toBe(true);
+  // Owner still sees their own post (publish-now may already be published).
+  const ownerQueue = (await (await api('/api/posts?view=queue', 'GET', undefined, { auth: true })).json()) as Array<{ id: string }>;
+  const ownerPublished = (await (await api('/api/posts?view=published', 'GET', undefined, { auth: true })).json()) as Array<{ id: string }>;
+  const ownerFailed = (await (await api('/api/posts?view=failed', 'GET', undefined, { auth: true })).json()) as Array<{ id: string }>;
+  const allOwner = [...ownerQueue, ...ownerPublished, ...ownerFailed];
+  expect(allOwner.some((p) => p.id === postId)).toBe(true);
+  // ...and B must not see it in any view.
+  const bQueue = (await (await api('/api/posts?view=queue', 'GET', undefined, b)).json()) as Array<{ id: string }>;
+  const bPublished = (await (await api('/api/posts?view=published', 'GET', undefined, b)).json()) as Array<{ id: string }>;
+  expect([...bQueue, ...bPublished].some((p) => p.id === postId)).toBe(false);
 
   // Settings are per-user too: B changes their retention and timezone without
   // touching the owner's preferences.
@@ -305,13 +311,14 @@ async function createNowPost(caption = 'Hello Cotly', override: string | undefin
 test('create post mode now writes post + target rows', async () => {
   const { postId } = await createNowPost();
   const post = await e.DB.prepare('SELECT status, publish_mode, scheduled_at, owner_id, timezone FROM posts WHERE id = ?').bind(postId).first<{ status: string; publish_mode: string; scheduled_at: number; owner_id: string; timezone: string }>();
-  expect(post?.status).toBe('scheduled');
+  // Publish-now runs a scheduler tick inline, so the post is published.
+  expect(post?.status).toBe('published');
   expect(post?.publish_mode).toBe('now');
   expect(Math.abs((post?.scheduled_at ?? 0) - nowS())).toBeLessThan(5);
   expect(post?.owner_id).toBe('owner');
   const tgt = await e.DB.prepare('SELECT platform, status, publish_generation, caption_override FROM post_targets WHERE post_id = ?').bind(postId).first<{ platform: string; status: string; publish_generation: number; caption_override: string | null }>();
   expect(tgt?.platform).toBe('mock');
-  expect(tgt?.status).toBe('scheduled');
+  expect(tgt?.status).toBe('published');
   expect(tgt?.publish_generation).toBe(1);
   expect(tgt?.caption_override).toBe('Hello override');
 });
@@ -323,22 +330,40 @@ test('post get + queue view return the documented shape', async () => {
   const body = (await one.json()) as { id: string; baseCaption: string; status: string; scheduledAt: number; timezone: string; media: unknown[]; targets: Array<{ id: string; accountId: string; provider: string; accountName: string; status: string; lastError: string | null }> };
   expect(body.id).toBe(postId);
   expect(body.baseCaption).toBe('Hello Cotly');
-  expect(body.status).toBe('scheduled');
+  // Publish-now publishes inline, so the post is already published here.
+  expect(body.status).toBe('published');
   expect(body.media).toEqual([]);
   expect(body.targets[0]?.id).toBe(targetId);
   expect(body.targets[0]?.accountId).toBe(mockAccId);
   expect(body.targets[0]?.provider).toBe('mock');
   expect(body.targets[0]?.accountName).toBe('Mock One');
-  expect(body.targets[0]?.status).toBe('scheduled');
+  expect(body.targets[0]?.status).toBe('published');
 
+  // The post has left the queue view — it is already published.
   const queue = await api('/api/posts?view=queue', 'GET', undefined, { auth: true });
   expect(queue.status).toBe(200);
   const rows = (await queue.json()) as Array<{ id: string; targets: unknown[]; media: unknown[] }>;
-  expect(rows.some((r) => r.id === postId)).toBe(true);
+  expect(rows.some((r) => r.id === postId)).toBe(false);
+  const published = await api('/api/posts?view=published', 'GET', undefined, { auth: true });
+  const publishedRows = (await published.json()) as Array<{ id: string }>;
+  expect(publishedRows.some((r) => r.id === postId)).toBe(true);
 });
 
 test('cancel then retry path works on a failed target', async () => {
-  const { postId, targetId } = await createNowPost('Cancel me');
+  // Publish-now completes inline (and published posts cannot be cancelled),
+  // so this test exercises cancel/retry on a scheduled post instead.
+  const schedAt = nowS() + 3600;
+  const created = await api('/api/posts', 'POST', {
+    baseCaption: 'Cancel me',
+    mediaIds: [],
+    targets: [{ accountId: mockAccId }],
+    mode: 'scheduled',
+    scheduledAt: schedAt,
+    timezone: 'UTC',
+  }, { auth: true, csrf: true });
+  expect(created.status).toBe(201);
+  const postId = ((await created.json()) as { postId: string }).postId;
+  const targetId = ((await e.DB.prepare('SELECT id FROM post_targets WHERE post_id = ?').bind(postId).first<{ id: string }>()) as { id: string }).id;
   const res = await api(`/api/posts/${postId}/cancel`, 'POST', undefined, { auth: true, csrf: true });
   expect(res.status).toBe(200);
   const tgt = await e.DB.prepare('SELECT status FROM post_targets WHERE id = ?').bind(targetId).first<{ status: string }>();

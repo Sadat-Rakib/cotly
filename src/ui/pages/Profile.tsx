@@ -99,6 +99,7 @@ export function ProfilePage({ me, onLogout }: Props) {
   const [mockName, setMockName] = useState('');
   const [pages, setPages] = useState<PageOption[] | null>(null);
   const [pageBusy, setPageBusy] = useState<string | null>(null);
+  const [igToken, setIgToken] = useState('');
 
   // --- Preferences state (absorbed from Settings) ---
   const [s, setS] = useState<SettingsShape | null>(null);
@@ -168,6 +169,20 @@ export function ProfilePage({ me, onLogout }: Props) {
       toast('ok', 'Bluesky connected.');
       setBskyHandle('');
       setBskyPassword('');
+      await loadAccounts();
+    } catch (e) {
+      toast('err', msg(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const connectInstagramToken = async () => {
+    setBusy('instagram');
+    try {
+      await api('/api/accounts/instagram/token', { method: 'POST', body: { accessToken: igToken } });
+      toast('ok', 'Instagram connected.');
+      setIgToken('');
       await loadAccounts();
     } catch (e) {
       toast('err', msg(e));
@@ -354,6 +369,30 @@ export function ProfilePage({ me, onLogout }: Props) {
                   </button>
                 )}
               </div>
+
+              {card.provider === 'instagram' && list.length === 0 && (
+                <>
+                  <form className="inline-form" onSubmit={(e) => { e.preventDefault(); void connectInstagramToken(); }}>
+                    <input
+                      className="input"
+                      type="password"
+                      placeholder="Paste an Instagram access token…"
+                      value={igToken}
+                      onChange={(e) => setIgToken(e.target.value)}
+                      required
+                      aria-label="Instagram access token"
+                    />
+                    <button className="btn btn-sm" type="submit" disabled={busy === 'instagram'}>
+                      {busy === 'instagram' ? 'Connecting…' : 'Connect with token'}
+                    </button>
+                  </form>
+                  <p className="hint">
+                    Optional: if you already have a long-lived Instagram access token (Meta Access
+                    Token tool / developer console), paste it here to connect without the OAuth
+                    redirect. The account must be Business or Creator.
+                  </p>
+                </>
+              )}
 
               {card.provider === 'bluesky' && list.length === 0 && (
                 <>

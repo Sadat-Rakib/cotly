@@ -83,7 +83,9 @@ export class InstagramAdapter implements PlatformAdapter {
     const data = (me.data ?? {}) as { id?: string; user_id?: string; username?: string; account_type?: string; profile_picture_url?: string };
     const igUserId = data.user_id ?? data.id;
     if (!igUserId) throw new Error('Instagram did not return a profile id. Try connecting again.');
-    if (data.account_type !== 'BUSINESS' && data.account_type !== 'CREATOR') {
+    // The Instagram Login API reports professional accounts as BUSINESS,
+    // CREATOR or MEDIA_CREATOR; personal accounts cannot publish.
+    if (!['BUSINESS', 'CREATOR', 'MEDIA_CREATOR'].includes(String(data.account_type))) {
       throw new Error('Instagram publishing requires a Business or Creator account. Switch your account type in Instagram settings and connect again.');
     }
     return {
@@ -136,25 +138,29 @@ export class InstagramAdapter implements PlatformAdapter {
 
   // Container first, then media_publish once the container is ready. The
   // container id is the pending externalId; resolvePending finishes the job.
+  // Single image (IMAGE container) or single video (REELS container).
   async publish(env: Env, input: PublishInput): Promise<PublishOutcome> {
     const secrets = secretsOf(env, input.account.accessToken);
     try {
       const uid = input.account.externalId;
       const images = input.media.filter((m) => m.mime.startsWith('image/'));
-      if (input.media.some((m) => m.mime.startsWith('video/'))) {
-        throw fail(secrets, 'VIDEO_UNSUPPORTED', 'Instagram video publishing is not supported by Cotly yet. Remove the video or publish without it.');
+      const videos = input.media.filter((m) => m.mime.startsWith('video/'));
+      if (images.length === 0 && videos.length === 0) {
+        throw fail(secrets, 'MEDIA_REQUIRED', 'Instagram posts require media. Attach one image or one video and retry.');
       }
-      if (images.length === 0) {
-        throw fail(secrets, 'MEDIA_REQUIRED', 'Instagram posts require an image. Attach one image and retry.');
+      if (images.length + videos.length > 1) {
+        throw fail(secrets, 'TOO_MANY_MEDIA', 'Cotly currently publishes one image or one video (Reel) per Instagram post. Remove the extra media and retry.');
       }
-      if (images.length > 1) {
-        throw fail(secrets, 'TOO_MANY_MEDIA', 'Cotly currently publishes one image per Instagram post. Remove the extra images and retry.');
+      const params = new URLSearchParams({ caption: input.caption });
+      if (videos.length === 1) {
+        params.set('media_type', 'REELS');
+        params.set('video_url', await presignMediaGet(env, videos[0]!.r2Key));
+        // Make the Reel visible in the main feed, not only in the Reels tab.
+        params.set('share_to_feed', '1');
+      } else {
+        params.set('media_type', 'IMAGE');
+        params.set('image_url', await presignMediaGet(env, images[0]!.r2Key));
       }
-      const params = new URLSearchParams({
-        media_type: 'IMAGE',
-        image_url: await presignMediaGet(env, images[0]!.r2Key),
-        caption: input.caption,
-      });
       const container = await this.post(secrets, `/${uid}/media`, params);
       const containerId = requireId(container, secrets, 'Instagram');
       return { kind: 'pending', externalId: containerId, ...(container.raw ? { raw: container.raw } : {}) };
