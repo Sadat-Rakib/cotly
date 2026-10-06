@@ -9,3 +9,7 @@ dist/
 .tail.log
 .neon
 .env.local
+
+.vercel
+.env*
+.vercel/
