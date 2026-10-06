@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { CAPABILITIES } from '../../contracts/capabilities';
 import { providerLabel, type Account, type Me, type Provider } from '../api';
 import type { MediaItem } from './MediaPicker';
@@ -70,7 +71,9 @@ interface Props {
   onConfirm: () => void;
 }
 
-export function ReviewScreen({ draft, me, busy, onBack, onConfirm }: Props) {
+// Memoized with a useMemo'd draft in the parent: composing keystrokes and
+// upload progress must not reconcile the review tree.
+export const ReviewScreen = memo(function ReviewScreen({ draft, me, busy, onBack, onConfirm }: Props) {
   const issues = platformIssues(draft);
   const blocked = issues.length > 0;
   const forProvider = (p: Provider): string[] =>
@@ -148,4 +151,4 @@ export function ReviewScreen({ draft, me, busy, onBack, onConfirm }: Props) {
       </div>
     </div>
   );
-}
+});

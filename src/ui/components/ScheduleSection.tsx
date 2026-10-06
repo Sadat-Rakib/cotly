@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { epochToLocalInput, evenSlots, localToEpoch, spacedSlots } from '../time';
 import { TimezoneSelect } from './TimezoneSelect';
 
@@ -20,7 +20,7 @@ function nowPlus(hours: number, tz: string): string {
   return epochToLocalInput(Math.floor(Date.now() / 1000) + hours * 3600, tz);
 }
 
-export function ScheduleSection({ defaultTz, mode, onModeChange, slots, onSlotsChange, tz, onTzChange }: Props) {
+export const ScheduleSection = memo(function ScheduleSection({ defaultTz, mode, onModeChange, slots, onSlotsChange, tz, onTzChange }: Props) {
   const [exactAt, setExactAt] = useState(() => nowPlus(1, defaultTz));
   const [variant, setVariant] = useState<'even' | 'spacing'>('even');
   const [count, setCount] = useState(4);
@@ -156,4 +156,4 @@ export function ScheduleSection({ defaultTz, mode, onModeChange, slots, onSlotsC
       )}
     </section>
   );
-}
+});

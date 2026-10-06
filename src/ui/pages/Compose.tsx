@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import {
   ApiError,
   api,
@@ -9,6 +9,7 @@ import {
   type Provider,
 } from '../api';
 import { CAPABILITIES } from '../../contracts/capabilities';
+import { CaptionPills } from '../components/CaptionPills';
 import { CollapsibleCard } from '../components/CollapsibleCard';
 import { MediaPicker, type MediaItem } from '../components/MediaPicker';
 import { ScheduleSection, type ScheduleMode } from '../components/ScheduleSection';
@@ -22,6 +23,54 @@ interface Props {
   me: Me;
   navigate: (p: string) => void;
 }
+
+// Memoized so caption keystrokes (parent re-render) never reconcile this
+// list. Props change identity only when accounts/selection actually change.
+const DestinationsBody = memo(function DestinationsBody({
+  accounts,
+  groups,
+  selection,
+  onToggle,
+  loaded,
+}: {
+  accounts: Account[];
+  groups: Array<[Provider, Account[]]>;
+  selection: Record<string, boolean>;
+  onToggle: (id: string, checked: boolean) => void;
+  loaded: boolean;
+}) {
+  if (!loaded) return <div className="skeleton" style={{ height: 48 }} />;
+  if (accounts.length === 0) {
+    return <p className="empty-line">No accounts yet — connect one under Profile.</p>;
+  }
+  return (
+    <>
+      {groups.map(([provider, list]) => (
+        <div key={provider} className="dest-group">
+          <span className="dest-provider">{providerLabel(provider)}</span>
+          {list.map((a) => {
+            const blocked = a.status !== 'connected';
+            return (
+              <label key={a.id} className={`dest-row${blocked ? ' dest-blocked' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={selection[a.id] === true}
+                  disabled={blocked}
+                  onChange={(e) => onToggle(a.id, e.target.checked)}
+                />
+                <span className="dest-name">
+                  {a.displayName}
+                  {a.handle ? <span className="dest-handle">@{a.handle}</span> : null}
+                </span>
+                <StatusBadge status={a.status} />
+              </label>
+            );
+          })}
+        </div>
+      ))}
+    </>
+  );
+});
 
 export function ComposePage({ me, navigate }: Props) {
   const toast = useToast();
@@ -40,7 +89,6 @@ export function ComposePage({ me, navigate }: Props) {
   const [success, setSuccess] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [noAccounts, setNoAccounts] = useState(false);
-  const overrideDetails = useRef(new Map<Provider, HTMLDetailsElement>());
 
   useEffect(() => {
     let alive = true;
@@ -66,12 +114,6 @@ export function ComposePage({ me, navigate }: Props) {
   const failedMedia = media.some((m) => m.status === 'error');
   const readyMediaIds = media.filter((m) => m.status === 'ready' && m.mediaId).map((m) => m.mediaId);
 
-  // Effective caption per provider = non-empty override ?? base caption.
-  const effective = (p: Provider): string => {
-    const ov = overrides[p];
-    return ov !== undefined && ov.trim() !== '' ? ov : caption;
-  };
-
   const videoWarnings = useMemo(() => {
     const warns: string[] = [];
     for (const item of media) {
@@ -89,29 +131,22 @@ export function ComposePage({ me, navigate }: Props) {
     return [...new Set(warns)];
   }, [media, selectedProviders]);
 
-  // Caption overflow per selected platform — surfaced, never truncated.
-  const overflowProviders = useMemo(() => selectedProviders.filter((p) => {
-    const cap = CAPABILITIES[p];
-    return cap ? [...effective(p)].length > cap.maxCaptionChars : false;
-  }), [selectedProviders, overrides, caption]);
-
-  const openOverride = (p: Provider, open: boolean) => {
-    if (open && overrides[p] === undefined) {
-      setOverrides((prev) => ({ ...prev, [p]: caption }));
-    }
-  };
-
-  // "Edit" on an overflow warning: open that platform's override and focus it.
-  const editOverride = (p: Provider) => {
-    setOverrides((prev) => (prev[p] === undefined ? { ...prev, [p]: caption } : prev));
-    const det = overrideDetails.current.get(p);
-    if (det) {
-      det.open = true;
-      const ta = det.querySelector('textarea');
-      if (ta) ta.focus();
-      det.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    }
-  };
+  // Stable callbacks keep the memoized sections (destinations, caption pills)
+  // from re-rendering on unrelated state changes.
+  const toggleSelection = useCallback((id: string, checked: boolean) => {
+    setSelection((prev) => ({ ...prev, [id]: checked }));
+  }, []);
+  const handleOverrideChange = useCallback((p: Provider, v: string) => {
+    setOverrides((prev) => ({ ...prev, [p]: v }));
+  }, []);
+  const handleClearOverride = useCallback((p: Provider) => {
+    setOverrides((prev) => {
+      if (!(p in prev)) return prev;
+      const next = { ...prev };
+      delete next[p];
+      return next;
+    });
+  }, []);
 
   // Entry to the mandatory review step — nothing is POSTed here.
   const beginReview = (e: FormEvent) => {
@@ -139,6 +174,10 @@ export function ComposePage({ me, navigate }: Props) {
     });
     const run: (number | null)[] = mode === 'now' ? [null] : slots; // 'now' -> single slotless post
     setBusy(true);
+    // Yield one frame so the disabled "Working" state paints before the
+    // network calls below occupy the interaction; otherwise the whole
+    // request duration lands in the button's INP render span.
+    await new Promise((r) => setTimeout(r, 0));
     let ok = 0;
     try {
       for (const slot of run) {
@@ -212,15 +251,13 @@ export function ComposePage({ me, navigate }: Props) {
     return [...g.entries()];
   }, [accounts]);
 
-  const draft: ReviewDraft = {
-    destinations: selected,
-    caption,
-    overrides,
-    media,
-    mode,
-    slots,
-    tz,
-  };
+  // Stable identity for the memoized review screen: same contents, no
+  // re-render of the review tree on unrelated parent updates.
+  const draft: ReviewDraft = useMemo(
+    () => ({ destinations: selected, caption, overrides, media, mode, slots, tz }),
+    [selected, caption, overrides, media, mode, slots, tz],
+  );
+  const handleBack = useCallback(() => { setReviewing(false); setErr(null); }, []);
 
   return (
     <form className="compose" onSubmit={beginReview}>
@@ -254,99 +291,28 @@ export function ComposePage({ me, navigate }: Props) {
             title="Caption"
             badge={caption.trim() !== '' ? `${[...caption].length} chars` : undefined}
           >
-            <textarea
-              className="textarea caption-input"
-              value={caption}
-              onChange={(e) => setCaption(e.target.value)}
-              placeholder="What are you posting today?"
-              rows={5}
+            <CaptionPills
+              baseCaption={caption}
+              onBaseChange={setCaption}
+              overrides={overrides}
+              onOverrideChange={handleOverrideChange}
+              onClearOverride={handleClearOverride}
+              selectedProviders={selectedProviders}
+              disabled={busy}
             />
-            {selectedProviders.length > 0 && (
-              <div className="char-chips">
-                {selectedProviders.map((p) => {
-                  const cap = CAPABILITIES[p];
-                  const len = [...effective(p)].length;
-                  const over = cap ? len > cap.maxCaptionChars : false;
-                  return (
-                    <span key={p} className={`char-chip${over ? ' over' : ''}`}>
-                      {providerLabel(p)} {len}/{cap ? cap.maxCaptionChars : '?'}
-                    </span>
-                  );
-                })}
-              </div>
-            )}
-            {overflowProviders.map((p) => {
-              const cap = CAPABILITIES[p];
-              const len = [...effective(p)].length;
-              return (
-                <div key={p} className="overflow-warn">
-                  <span className="error-text">
-                    {`Your ${providerLabel(p)} caption exceeds the current allowed length (${len} > ${cap.maxCaptionChars}).`}
-                  </span>
-                  <button type="button" className="btn btn-sm" onClick={() => editOverride(p)}>Edit</button>
-                </div>
-              );
-            })}
-            {selectedProviders.map((p) => (
-              <details
-                key={p}
-                className="override"
-                ref={(el) => {
-                  if (el) overrideDetails.current.set(p, el);
-                  else overrideDetails.current.delete(p);
-                }}
-                onToggle={(e) => openOverride(p, (e.target as HTMLDetailsElement).open)}
-              >
-                <summary>Caption override — {providerLabel(p)}</summary>
-                <textarea
-                  className="textarea"
-                  rows={4}
-                  value={overrides[p] ?? ''}
-                  placeholder="Leave empty to use the base caption"
-                  onChange={(e) => setOverrides((prev) => ({ ...prev, [p]: e.target.value }))}
-                />
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => setOverrides((prev) => ({ ...prev, [p]: '' }))}
-                >
-                  Use base caption
-                </button>
-              </details>
-            ))}
           </CollapsibleCard>
 
           <CollapsibleCard
             title="Destinations"
             badge={selected.length > 0 ? `${selected.length} selected` : undefined}
           >
-            {!loaded && <div className="skeleton" style={{ height: 48 }} />}
-            {loaded && accounts.length === 0 && (
-              <p className="empty-line">No accounts yet — connect one under Profile.</p>
-            )}
-            {groups.map(([provider, list]) => (
-              <div key={provider} className="dest-group">
-                <span className="dest-provider">{providerLabel(provider)}</span>
-                {list.map((a) => {
-                  const blocked = a.status !== 'connected';
-                  return (
-                    <label key={a.id} className={`dest-row${blocked ? ' dest-blocked' : ''}`}>
-                      <input
-                        type="checkbox"
-                        checked={selection[a.id] === true}
-                        disabled={blocked}
-                        onChange={(e) => setSelection((prev) => ({ ...prev, [a.id]: e.target.checked }))}
-                      />
-                      <span className="dest-name">
-                        {a.displayName}
-                        {a.handle ? <span className="dest-handle">@{a.handle}</span> : null}
-                      </span>
-                      <StatusBadge status={a.status} />
-                    </label>
-                  );
-                })}
-              </div>
-            ))}
+            <DestinationsBody
+              accounts={accounts}
+              groups={groups}
+              selection={selection}
+              onToggle={toggleSelection}
+              loaded={loaded}
+            />
             {selected.some((a) => a.status !== 'connected') && (
               <p className="error-text">Some selected accounts are not connected — deselect or reconnect them.</p>
             )}
@@ -389,7 +355,7 @@ export function ComposePage({ me, navigate }: Props) {
             draft={draft}
             me={me}
             busy={busy}
-            onBack={() => { setReviewing(false); setErr(null); }}
+            onBack={handleBack}
             onConfirm={() => void confirmSend()}
           />
         </>

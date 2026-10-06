@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 
 interface Props {
   id?: string;
@@ -18,7 +18,7 @@ function timeZones(): string[] {
   return cachedZones;
 }
 
-export function TimezoneSelect({ id, value, onChange }: Props) {
+export const TimezoneSelect = memo(function TimezoneSelect({ id, value, onChange }: Props) {
   const [filter, setFilter] = useState('');
   const zones = useMemo(() => {
     const all = timeZones();
@@ -49,4 +49,4 @@ export function TimezoneSelect({ id, value, onChange }: Props) {
       </select>
     </div>
   );
-}
+});
