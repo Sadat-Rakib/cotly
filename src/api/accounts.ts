@@ -6,7 +6,7 @@ import { parseCookies, requireSession } from '../lib/sessions';
 import { nowS, PROVIDER_LABEL } from './_shared';
 import { getAdapter } from '../adapters/registry';
 import { getPublicJwks } from '../adapters/bluesky';
-import { parseSignedRequest } from '../adapters/_shared';
+import { oauthCallbackBase, parseSignedRequest } from '../adapters/_shared';
 
 interface AccountView {
   id: string;
@@ -212,9 +212,11 @@ async function upsertAccount(
 
 // GET /oauth/bluesky/client-metadata.json and /oauth/bluesky/jwks.json — the
 // AT Protocol confidential-client identity of this deployment. The metadata
-// URL is the client_id, so both documents must be served without redirects.
+// URL is the client_id, so both documents must be served without redirects
+// from the OAuth callback base (the Worker origin, stable across frontend
+// domains). client_uri is display-only, so it points at the canonical frontend.
 export async function blueskyOAuthDocument(req: Request, env: Env, doc: string): Promise<Response> {
-  const base = env.APP_URL;
+  const base = oauthCallbackBase(env);
   if (doc === 'jwks.json') {
     const jwks = await getPublicJwks(env);
     return json(jwks);
@@ -222,7 +224,7 @@ export async function blueskyOAuthDocument(req: Request, env: Env, doc: string):
   return json({
     client_id: `${base}/oauth/bluesky/client-metadata.json`,
     client_name: 'Cotly',
-    client_uri: base,
+    client_uri: env.APP_URL,
     logo_uri: `${base}/brand/cotly-avatar-512.png`,
     redirect_uris: [`${base}/oauth/bluesky/callback`],
     scope: 'atproto transition:generic',
@@ -325,7 +327,9 @@ export async function oauthStart(req: Request, env: Env, provider: string): Prom
     throw new HttpError(400, `${label} sign-in is not available yet.`);
   }
   if (!adapter.buildAuthUrl) throw new HttpError(400, `${label} connects with a direct sign-in instead of OAuth. Use the inline form on the Accounts page.`);
-  const redirectUri = `${env.APP_URL}/oauth/${provider}/callback`;
+  // The provider-facing redirect_uri: the OAuth callback base (registered in
+  // each platform's developer portal), not the frontend domain.
+  const redirectUri = `${oauthCallbackBase(env)}/oauth/${provider}/callback`;
   const state = randomId(18);
   let auth: { url: string; verifier?: string };
   try {
@@ -344,9 +348,9 @@ export async function oauthStart(req: Request, env: Env, provider: string): Prom
 
 export async function oauthCallback(req: Request, env: Env, provider: string): Promise<Response> {
   const params = new URL(req.url).searchParams;
-  const secure = new URL(req.url).protocol === 'https:';
-  // Response.redirect() only accepts a numeric status in the DOM lib types, so
-  // build the 302 by hand to attach the page-choice cookie.
+  // Final hand-off goes to the canonical frontend (APP_URL), never the request
+  // host — the provider may legitimately deliver the browser to the OAuth
+  // callback base (Worker origin), but the user must land back on the frontend.
   const redirect = (query: string, headers: Record<string, string> = {}): Response =>
     new Response(null, { status: 302, headers: { Location: `${env.APP_URL}/app/profile?${query}`, ...headers } });
   const fail = (message: string): Response => redirect(`error=${encodeURIComponent(message)}`);
@@ -366,12 +370,19 @@ export async function oauthCallback(req: Request, env: Env, provider: string): P
     const adapter = getAdapter(provider as Provider);
     if (!adapter.handleCallback) return fail(`${PROVIDER_LABEL[provider as Provider] ?? provider} does not support OAuth sign-in.`);
     const result = await adapter.handleCallback(env, params, row.verifier ?? undefined);
-    // More than one Page to choose from — park the user token and ask which Page.
+    // More than one Page to choose from — park the user token server-side and
+    // hand the browser a single-use pick id. A cookie here would be host-bound
+    // to the callback origin, invisible once the SPA serves the canonical
+    // frontend domain, so the chooser sends the pick id back instead.
     if (result.pageChoice) {
       const blob = await encryptSecret(env.ENCRYPTION_SECRET, JSON.stringify({ u: result.pageChoice.userToken, p: result.pageChoice.pages, o: ownerId }));
-      return redirect(`choose_page=${encodeURIComponent(provider)}`, {
-        'set-cookie': `${PAGE_PICK_COOKIE}=${blob}; Path=/; Max-Age=900; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`,
-      });
+      const pickId = randomId(18);
+      const now = nowS();
+      await env.DB
+        .prepare("INSERT INTO oauth_states (state, provider, verifier, redirect_uri, created_at, expires_at, owner_id) VALUES (?, 'facebook-page-pick', ?, '', ?, ?, ?)")
+        .bind(pickId, blob, now, now + 900, ownerId)
+        .run();
+      return redirect(`choose_page=${encodeURIComponent(provider)}&pick=${encodeURIComponent(pickId)}`);
     }
     if (!result.account || !result.tokens) return fail('The provider did not return an account to connect.');
     await upsertAccount(env, ownerId, provider as Provider, result.account, result.tokens, result.scopes);
@@ -382,10 +393,28 @@ export async function oauthCallback(req: Request, env: Env, provider: string): P
 }
 
 // ---- Facebook Page picker ----
-// The OAuth user token lives only in this encrypted, httpOnly, 15-minute cookie
-// until the user picks a Page. Nothing is written to D1 before that choice.
+// The OAuth user token lives only in a single-use, encrypted, 15-minute
+// oauth_states row (the browser holds its opaque pick id). The legacy cookie
+// hand-off is still honored so a pre-existing chooser session keeps working.
 const PAGE_PICK_COOKIE = 'cotly_fb_pages';
-async function pagePickUserToken(req: Request, env: Env): Promise<{ userToken: string; ownerId: string }> {
+const PAGE_PICK_PROVIDER = 'facebook-page-pick';
+async function pagePickUserToken(req: Request, env: Env, pick?: string): Promise<{ userToken: string; ownerId: string; pickId?: string }> {
+  if (pick) {
+    const row = await env.DB
+      .prepare('SELECT verifier, owner_id, expires_at FROM oauth_states WHERE state = ? AND provider = ?')
+      .bind(pick, PAGE_PICK_PROVIDER)
+      .first<{ verifier: string | null; owner_id: string; expires_at: number }>();
+    if (row?.verifier && row.expires_at > nowS()) {
+      try {
+        const parsed = JSON.parse(await decryptSecret(env.ENCRYPTION_SECRET, row.verifier)) as { u?: unknown; o?: unknown };
+        const userToken = String(parsed.u ?? '');
+        const ownerId = String(parsed.o ?? '');
+        if (userToken && ownerId) return { userToken, ownerId, pickId: pick };
+      } catch {
+        // fall through to the cookie path / expiry error below
+      }
+    }
+  }
   const blob = parseCookies(req)[PAGE_PICK_COOKIE];
   if (!blob) throw new HttpError(400, 'That Facebook connection attempt has expired. Connect Facebook again to choose a Page.');
   let userToken: string;
@@ -429,8 +458,9 @@ export async function threadsDeauthorize(req: Request, env: Env): Promise<Respon
 export async function listFacebookPages(req: Request, env: Env): Promise<Response> {
   const adapter = getAdapter('facebook');
   if (!adapter.listPages) throw new HttpError(400, 'Choosing a Page is not available for Facebook yet.');
+  const pick = new URL(req.url).searchParams.get('pick') ?? undefined;
   try {
-    return json({ pages: await adapter.listPages(env, (await pagePickUserToken(req, env)).userToken) });
+    return json({ pages: await adapter.listPages(env, (await pagePickUserToken(req, env, pick)).userToken) });
   } catch (err) {
     throw new HttpError(400, err instanceof Error && err.message ? err.message : 'Could not read your Facebook Pages.');
   }
@@ -440,17 +470,22 @@ export async function listFacebookPages(req: Request, env: Env): Promise<Respons
 export async function selectFacebookPage(req: Request, env: Env): Promise<Response> {
   const body = await readJson(req);
   const pageId = String(body.pageId ?? '');
+  const pick = typeof body.pick === 'string' && body.pick ? body.pick : undefined;
   if (!pageId) throw new HttpError(400, 'Choose a Page to connect.');
   const adapter = getAdapter('facebook');
   if (!adapter.pickPage) throw new HttpError(400, 'Choosing a Page is not available for Facebook yet.');
   let picked: Awaited<ReturnType<NonNullable<PlatformAdapter['pickPage']>>>;
-  const pick = await pagePickUserToken(req, env);
+  const parked = await pagePickUserToken(req, env, pick);
   try {
-    picked = await adapter.pickPage(env, pick.userToken, pageId);
+    picked = await adapter.pickPage(env, parked.userToken, pageId);
   } catch (err) {
     throw new HttpError(400, err instanceof Error && err.message ? err.message : 'Could not connect that Page.');
   }
-  const saved = await upsertAccount(env, pick.ownerId, 'facebook', picked.account, picked.tokens, picked.scopes);
+  // The pick id is single-use: burn it once a Page was connected with it.
+  if (parked.pickId) {
+    await env.DB.prepare('DELETE FROM oauth_states WHERE state = ? AND provider = ?').bind(parked.pickId, PAGE_PICK_PROVIDER).run();
+  }
+  const saved = await upsertAccount(env, parked.ownerId, 'facebook', picked.account, picked.tokens, picked.scopes);
   const secure = new URL(req.url).protocol === 'https:';
   return json(saved, 201, {
     'set-cookie': `${PAGE_PICK_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`,

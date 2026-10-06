@@ -8,6 +8,7 @@ import {
   httpJson,
   mediaBytes,
   needsReconnect,
+  oauthCallbackBase,
   OutcomeError,
   outcomeFromError,
   redact,
@@ -118,6 +119,23 @@ async function encodeJwt(jwk: DpopPrivateJwk, payload: Record<string, unknown>, 
   return `${header}.${payloadB64}.${sig}`;
 }
 
+// OAuth metadata + token endpoints reject a proof whose DPoP nonce is missing
+// or stale with 400 use_dpop_nonce and hand back the expected nonce in the
+// dpop-nonce response header. Every auth-server caller must run that one-shot
+// handshake — a proof without it always fails on the first attempt.
+function isNonceChallenge(resp: ProviderResponse): boolean {
+  return (resp.status === 400 || resp.status === 401) && resp.raw.includes('use_dpop_nonce');
+}
+
+function providerErrorDetail(resp: ProviderResponse): string {
+  const d = (resp.data ?? {}) as { error?: unknown; error_description?: unknown; message?: unknown };
+  const parts: string[] = [];
+  if (typeof d.error === 'string' && d.error) parts.push(d.error);
+  if (typeof d.error_description === 'string' && d.error_description) parts.push(d.error_description);
+  else if (typeof d.message === 'string' && d.message) parts.push(d.message);
+  return parts.length ? `HTTP ${resp.status}: ${parts.join(' — ')}` : `HTTP ${resp.status}`;
+}
+
 // ---------- DPoP ----------
 
 async function dpopProof(jwk: DpopPrivateJwk, htm: string, htu: string, opts: { nonce?: string; ath?: string } = {}): Promise<string> {
@@ -147,6 +165,31 @@ async function setNonce(env: Env, nonce: string | null): Promise<void> {
     .run();
 }
 
+// ---------- Token endpoint (authorization_code + refresh_token) ----------
+
+// POST {AUTH_SERVER}/oauth/token with a DPoP proof, transparently handling the
+// server's nonce rotation (one retry with the fresh nonce — the same handshake
+// the PAR call performs). Returns the raw provider response so callers can show
+// the real rejection instead of a generic message.
+async function oauthTokenRequest(env: Env, dpopJwk: DpopPrivateJwk, body: URLSearchParams): Promise<ProviderResponse> {
+  const tokenUrl = `${AUTH_SERVER}/oauth/token`;
+  const send = async (nonce?: string): Promise<ProviderResponse> =>
+    httpJson(tokenUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', dpop: await dpopProof(dpopJwk, 'POST', tokenUrl, { nonce }) },
+      body,
+    });
+  let res = await send(await getNonce(env));
+  const fresh = res.headers.get('dpop-nonce');
+  if (fresh) await setNonce(env, fresh);
+  if (isNonceChallenge(res) && fresh) {
+    res = await send(fresh);
+    const retryNonce = res.headers.get('dpop-nonce');
+    if (retryNonce) await setNonce(env, retryNonce);
+  }
+  return res;
+}
+
 // ---------- Identity resolution ----------
 
 interface DidDocument {
@@ -171,11 +214,14 @@ export async function resolveDidDocument(did: string): Promise<{ pdsUrl: string 
 // ---------- Helpers ----------
 
 function clientId(env: Env): string {
-  return `${env.APP_URL}/oauth/bluesky/client-metadata.json`;
+  // The client_id IS the metadata URL and must be served by this deployment
+  // without redirects: the callback base (Worker URL) is the stable origin,
+  // independent of which frontend domain hosts the SPA.
+  return `${oauthCallbackBase(env)}/oauth/bluesky/client-metadata.json`;
 }
 
 function redirectUri(env: Env): string {
-  return `${env.APP_URL}/oauth/bluesky/callback`;
+  return `${oauthCallbackBase(env)}/oauth/bluesky/callback`;
 }
 
 async function clientAssertion(env: Env, aud: string): Promise<string> {
@@ -304,7 +350,8 @@ export class BlueskyAdapter implements PlatformAdapter {
     }
     if (par.status === 400 || par.status === 401) {
       const freshNonce = par.headers.get('dpop-nonce');
-      console.error('[bluesky-par] nonce retry needed:', par.status, (await par.clone().text()).slice(0, 300));
+      const firstBody = (await par.clone().text()).slice(0, 300);
+      console.error('[bluesky-par] nonce retry needed:', par.status, firstBody);
       if (freshNonce) {
         await setNonce(env, freshNonce);
         const retryProof = await dpopProof(key, 'POST', `${AUTH_SERVER}/oauth/par`, { nonce: freshNonce });
@@ -314,10 +361,13 @@ export class BlueskyAdapter implements PlatformAdapter {
           body: parBody,
         });
         console.error('[bluesky-par] retry status:', par.status, (await par.clone().text()).slice(0, 300));
+      } else {
+        // A real rejection (invalid_client, invalid_redirect_uri, ...) — show it.
+        throw new Error(`Bluesky rejected the connection start (${par.status}: ${firstBody.slice(0, 200)}). Try again in a moment.`);
       }
     }
     if (!par.ok) {
-      throw new Error('Bluesky rejected the connection start. Try again in a moment.');
+      throw new Error(`Bluesky rejected the connection start (HTTP ${par.status}). Try again in a moment.`);
     }
     const parData = (await par.json().catch(() => ({}))) as { request_uri?: string };
     if (!parData.request_uri) throw new Error('Bluesky did not return an authorization request. Try again.');
@@ -337,7 +387,6 @@ export class BlueskyAdapter implements PlatformAdapter {
     const blob = JSON.parse(await decryptSecret(env.ENCRYPTION_SECRET, verifier)) as AtprotoAuthBlob;
 
     const tokenUrl = `${AUTH_SERVER}/oauth/token`;
-    const proof = await dpopProof(blob.dpop, 'POST', tokenUrl);
     const assertion = await clientAssertion(env, AUTH_SERVER);
     const body = new URLSearchParams({
       grant_type: 'authorization_code',
@@ -348,14 +397,12 @@ export class BlueskyAdapter implements PlatformAdapter {
       client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
       client_assertion: assertion,
     });
-    const tok = await httpJson(tokenUrl, {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded', dpop: proof },
-      body,
-    });
+    const tok = await oauthTokenRequest(env, blob.dpop, body);
     const data = (tok.data ?? {}) as { access_token?: unknown; refresh_token?: unknown; expires_in?: unknown; scope?: unknown; sub?: unknown };
     if (!tok.ok || typeof data.access_token !== 'string' || typeof data.refresh_token !== 'string') {
-      throw new Error('Bluesky rejected the connection attempt. Verify the app credentials and try again.');
+      // Surface the authorization server's real rejection (e.g. invalid_grant,
+      // invalid_client) — a generic message here cost real debugging time.
+      throw new Error(`Bluesky rejected the connection attempt (${providerErrorDetail(tok)}). Verify the app credentials and try again.`);
     }
     const did = typeof data.sub === 'string' ? data.sub : '';
     if (!did) throw new Error('Bluesky did not return an account id. Try connecting again.');
@@ -397,26 +444,23 @@ export class BlueskyAdapter implements PlatformAdapter {
       throw new Error('Bluesky authorization expired. Reconnect Bluesky and retry.');
     }
     const jwk = JSON.parse(await decryptSecret(env.ENCRYPTION_SECRET, dpopEnc)) as DpopPrivateJwk;
-    const tokenUrl = `${AUTH_SERVER}/oauth/token`;
     const assertion = await clientAssertion(env, AUTH_SERVER);
-    const proof = await dpopProof(jwk, 'POST', tokenUrl);
-    const resp = await httpJson(tokenUrl, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/x-www-form-urlencoded',
-        dpop: proof,
-      },
-      body: new URLSearchParams({
+    const resp = await oauthTokenRequest(
+      env,
+      jwk,
+      new URLSearchParams({
         grant_type: 'refresh_token',
         refresh_token: tokens.refreshToken,
         client_id: clientId(env),
         client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
         client_assertion: assertion,
       }),
-    });
+    );
     const data = (resp.data ?? {}) as { access_token?: unknown; refresh_token?: unknown; expires_in?: unknown };
     if (!resp.ok || typeof data.access_token !== 'string' || typeof data.refresh_token !== 'string') {
-      throw new Error('Bluesky authorization expired. Reconnect Bluesky and retry.');
+      // Real provider reason first (e.g. invalid_grant — rotated refresh token
+      // replayed), then the reconnect advice.
+      throw new Error(`Bluesky authorization expired (${providerErrorDetail(resp)}). Reconnect Bluesky and retry.`);
     }
     const expiresAt = typeof data.expires_in === 'number' ? Math.floor(Date.now() / 1000) + data.expires_in : undefined;
     return {

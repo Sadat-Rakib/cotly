@@ -7,6 +7,7 @@ import {
   httpJson,
   mediaBytes,
   needsReconnect,
+  oauthCallbackBase,
   oauthError,
   outcomeFromError,
   redact,
@@ -77,7 +78,7 @@ export class LinkedInAdapter implements PlatformAdapter {
       body: new URLSearchParams({
         grant_type: 'authorization_code',
         code,
-        redirect_uri: `${env.APP_URL}/oauth/linkedin/callback`,
+        redirect_uri: `${oauthCallbackBase(env)}/oauth/linkedin/callback`,
         client_id: env.LINKEDIN_CLIENT_ID ?? '',
         client_secret: env.LINKEDIN_CLIENT_SECRET ?? '',
       }),

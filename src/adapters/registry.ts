@@ -49,7 +49,7 @@ export function oauthConfigured(
     case 'instagram':
       return Boolean(env.INSTAGRAM_CLIENT_ID);
     case 'bluesky':
-      // AT Protocol OAuth: the client identity derives from APP_URL itself.
+      // AT Protocol OAuth: the client identity derives from the OAuth callback base.
       return true;
     default:
       return false;

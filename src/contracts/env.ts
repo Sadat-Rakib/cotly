@@ -6,6 +6,11 @@ export interface Env {
   ASSETS: Fetcher;
 
   APP_URL: string;
+  // Origin where providers send the OAuth browser redirect (the Worker URL when
+  // the OAuth redirect URIs are registered against it). Every frontend redirect
+  // stays on APP_URL; only the provider-facing callback base differs. Unset
+  // (local dev, single-origin deployments) it defaults to APP_URL.
+  OAUTH_CALLBACK_BASE?: string;
   ALLOW_REGISTRATION: string;
   MOCK_SOCIAL_ENABLED: string;
   // Explicit opt-in to allow MockSocial accounts on a non-localhost URL.

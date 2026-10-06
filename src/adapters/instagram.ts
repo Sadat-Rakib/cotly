@@ -6,6 +6,7 @@ import {
   graphError,
   httpJson,
   needsReconnect,
+  oauthCallbackBase,
   oauthError,
   outcomeFromError,
   presignMediaGet,
@@ -55,7 +56,7 @@ export class InstagramAdapter implements PlatformAdapter {
         client_id: env.INSTAGRAM_CLIENT_ID ?? '',
         client_secret: env.INSTAGRAM_CLIENT_SECRET ?? '',
         grant_type: 'authorization_code',
-        redirect_uri: `${env.APP_URL}/oauth/instagram/callback`,
+        redirect_uri: `${oauthCallbackBase(env)}/oauth/instagram/callback`,
         code,
       }),
     });

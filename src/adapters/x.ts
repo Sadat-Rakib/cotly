@@ -8,6 +8,7 @@ import {
   mediaBytes,
   needsReconnect,
   OutcomeError,
+  oauthCallbackBase,
   oauthError,
   outcomeFromError,
   redact,
@@ -182,7 +183,7 @@ export class XAdapter implements PlatformAdapter {
       body: new URLSearchParams({
         grant_type: 'authorization_code',
         code,
-        redirect_uri: `${env.APP_URL}/oauth/x/callback`,
+        redirect_uri: `${oauthCallbackBase(env)}/oauth/x/callback`,
         code_verifier: verifier,
       }),
     });

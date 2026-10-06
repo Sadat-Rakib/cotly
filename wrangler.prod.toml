@@ -23,7 +23,14 @@ migrations_dir = "migrations"
 crons = ["* * * * *"]
 
 [vars]
-APP_URL = "https://cotly.cotly-app.workers.dev"
+# APP_URL is the SINGLE canonical frontend URL: the SPA domain users see, the
+# target of every OAuth callback redirect, and the base for user-facing links.
+APP_URL = "https://cotly-social.vercel.app"
+# Provider-facing callback origin (the Worker). OAuth redirect URIs are
+# registered against it in each platform's portal; providers deliver the
+# browser here, and the Worker always 302s back to APP_URL. Never used for
+# frontend redirects.
+OAUTH_CALLBACK_BASE = "https://cotly.cotly-app.workers.dev"
 # Public registration is ON. Every query is owner-scoped (migration 0003) and
 # covered by multi-user isolation tests before this was enabled.
 ALLOW_REGISTRATION = "true"

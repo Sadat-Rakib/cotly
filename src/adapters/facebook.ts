@@ -6,6 +6,7 @@ import {
   graphError,
   graphTestConnection,
   httpJson,
+  oauthCallbackBase,
   oauthError,
   outcomeFromError,
   presignMediaGet,
@@ -48,7 +49,7 @@ export class FacebookAdapter implements PlatformAdapter {
     oauthError(params, 'Facebook');
     const code = params.get('code');
     if (!code) throw new Error('Facebook did not return an authorization code. Try connecting again.');
-    const redirectUri = `${env.APP_URL}/oauth/facebook/callback`;
+    const redirectUri = `${oauthCallbackBase(env)}/oauth/facebook/callback`;
     const tok = await httpJson(
       `${GRAPH}/oauth/access_token?${new URLSearchParams({
         client_id: env.META_CLIENT_ID ?? '',

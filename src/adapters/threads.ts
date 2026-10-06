@@ -9,6 +9,7 @@ import {
   graphTestConnection,
   httpJson,
   needsReconnect,
+  oauthCallbackBase,
   oauthError,
   outcomeFromError,
   presignMediaGet,
@@ -61,7 +62,7 @@ export class ThreadsAdapter implements PlatformAdapter {
         client_id: env.THREADS_CLIENT_ID ?? '',
         client_secret: env.THREADS_CLIENT_SECRET ?? '',
         grant_type: 'authorization_code',
-        redirect_uri: `${env.APP_URL}/oauth/threads/callback`,
+        redirect_uri: `${oauthCallbackBase(env)}/oauth/threads/callback`,
         code,
       }),
     });

@@ -97,6 +97,7 @@ export function ProfilePage({ me, onLogout }: Props) {
   const [busy, setBusy] = useState<Provider | null>(null);
   const [mockName, setMockName] = useState('');
   const [pages, setPages] = useState<PageOption[] | null>(null);
+  const [pagePick, setPagePick] = useState('');
   const [pageBusy, setPageBusy] = useState<string | null>(null);
   const [igToken, setIgToken] = useState('');
 
@@ -128,7 +129,9 @@ export function ProfilePage({ me, onLogout }: Props) {
     if (err) toast('err', err);
     const choose = q.get('choose_page');
     if (choose === 'facebook') {
-      api<{ pages: PageOption[] }>('/api/accounts/facebook/pages')
+      const pick = q.get('pick') ?? '';
+      setPagePick(pick);
+      api<{ pages: PageOption[] }>(`/api/accounts/facebook/pages${pick ? `?pick=${encodeURIComponent(pick)}` : ''}`)
         .then((r) => setPages(r.pages.length > 0 ? r.pages : []))
         .catch((e) => toast('err', msg(e)));
     }
@@ -224,7 +227,7 @@ export function ProfilePage({ me, onLogout }: Props) {
   const choosePage = async (page: PageOption) => {
     setPageBusy(page.id);
     try {
-      await api('/api/accounts/facebook/pages', { method: 'POST', body: { pageId: page.id } });
+      await api('/api/accounts/facebook/pages', { method: 'POST', body: { pageId: page.id, ...(pagePick ? { pick: pagePick } : {}) } });
       setPages(null);
       toast('ok', `${page.name} connected.`);
       await loadAccounts();

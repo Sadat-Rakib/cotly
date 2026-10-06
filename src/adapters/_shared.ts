@@ -8,6 +8,15 @@ const FETCH_TIMEOUT_MS = 30_000;
 const RAW_SUMMARY_MAX = 300;
 export type Secrets = (string | undefined | null)[];
 
+// Origin providers redirect the browser to after authorization: the Worker URL
+// when OAUTH_CALLBACK_BASE is set (production registers its OAuth redirect URIs
+// there), otherwise APP_URL (single-origin deployments and local dev). This is
+// provider-facing only — every frontend redirect must use APP_URL and never
+// derive from request.url or the Worker hostname.
+export function oauthCallbackBase(env: Env): string {
+  return (env.OAUTH_CALLBACK_BASE || env.APP_URL).replace(/\/+$/, '');
+}
+
 export class OutcomeError extends Error {
   constructor(readonly outcome: PublishOutcome) {
     super('provider_outcome');
