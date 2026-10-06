@@ -27,7 +27,9 @@ APP_URL = "https://cotly.cotly-app.workers.dev"
 # Public registration is ON. Every query is owner-scoped (migration 0003) and
 # covered by multi-user isolation tests before this was enabled.
 ALLOW_REGISTRATION = "true"
-MOCK_SOCIAL_ENABLED = "true"
+# MockSocial must NEVER fake success in production: real providers only.
+# Local dev (wrangler.toml) keeps MOCK_SOCIAL_ENABLED=true for pipeline tests.
+MOCK_SOCIAL_ENABLED = "false"
 MEDIA_RETENTION_HOURS = "168"
 # X is pay-per-post; publishing is enabled but hard-capped per month.
 X_API_ENABLED = "true"

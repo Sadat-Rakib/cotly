@@ -2,9 +2,11 @@ import type { Env } from '../contracts/env';
 import { objectDelete, objectStore } from '../lib/objectstore';
 import { logActivity } from './publish';
 
-const TERMINAL_TARGETS = "('published','failed','cancelled','assisted')";
+const TERMINAL_TARGETS = "('published','failed','cancelled','assisted','needs_reconnect')";
 
 // Only rolls up posts that are not already terminal (API cancel/rollup wins).
+// Truthful rollup: PUBLISHED only when >=1 target is provider-confirmed;
+// NEEDS_RECONNECT surfaces expired auth; otherwise FAILED.
 export async function rollupAffectedPosts(env: Env, postIds: Iterable<string>, now: number): Promise<number> {
   let rolledUp = 0;
   for (const postId of postIds) {
@@ -12,15 +14,23 @@ export async function rollupAffectedPosts(env: Env, postIds: Iterable<string>, n
       .prepare(
         `SELECT COUNT(*) AS total,
                 SUM(CASE WHEN status IN ${TERMINAL_TARGETS} THEN 1 ELSE 0 END) AS done,
-                SUM(CASE WHEN status = 'published' THEN 1 ELSE 0 END) AS published
+                SUM(CASE WHEN status = 'published' THEN 1 ELSE 0 END) AS published,
+                SUM(CASE WHEN status = 'needs_reconnect' THEN 1 ELSE 0 END) AS reconnect
          FROM post_targets WHERE post_id = ?`,
       )
       .bind(postId)
-      .first<{ total: number; done: number | null; published: number | null }>();
-    if (!r || r.done === null || r.done !== r.total) continue;
-    const status = (r.published ?? 0) > 0 ? 'published' : 'failed';
+      .first<{ total: number; done: number | null; published: number | null; reconnect: number | null }>();
+    if (!r || r.done === null || r.done !== r.total) {
+      // Still in flight: keep the post in a truthful transitional state.
+      await env.DB
+        .prepare(`UPDATE posts SET status = 'publishing', updated_at = ? WHERE id = ? AND status IN ('scheduled')`)
+        .bind(now, postId)
+        .run();
+      continue;
+    }
+    const status = (r.published ?? 0) > 0 ? 'published' : (r.reconnect ?? 0) > 0 ? 'needs_reconnect' : 'failed';
     const res = await env.DB
-      .prepare(`UPDATE posts SET status = ?, completed_at = ?, updated_at = ? WHERE id = ? AND status NOT IN ('published','failed','cancelled')`)
+      .prepare(`UPDATE posts SET status = ?, completed_at = ?, updated_at = ? WHERE id = ? AND status NOT IN ('published','failed','needs_reconnect','cancelled')`)
       .bind(status, now, now, postId)
       .run();
     if (res.meta.changes) rolledUp++;

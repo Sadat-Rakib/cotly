@@ -31,6 +31,7 @@ export type PostStatus =
   | 'publishing'
   | 'published'
   | 'failed'
+  | 'needs_reconnect'
   | 'cancelled';
 
 export interface PlatformCapabilities {

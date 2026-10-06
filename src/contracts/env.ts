@@ -8,6 +8,9 @@ export interface Env {
   APP_URL: string;
   ALLOW_REGISTRATION: string;
   MOCK_SOCIAL_ENABLED: string;
+  // Explicit opt-in to allow MockSocial accounts on a non-localhost URL.
+  // Production defaults to real providers only; mock stays fail-closed.
+  ALLOW_MOCK_IN_PROD?: string;
   MEDIA_RETENTION_HOURS: string;
 
   ENCRYPTION_SECRET: string;

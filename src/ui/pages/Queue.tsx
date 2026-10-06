@@ -87,6 +87,8 @@ export function QueuePage({ me, navigate }: Props) {
       const isPublished = p.status === 'published' || (p.targets.length > 0 && p.targets.every((t) => t.status === 'published' || t.status === 'cancelled' || t.status === 'assisted'));
       if (isPublished) { out.published.push(p); continue; }
       if (p.status === 'cancelled') continue;
+      // Expired auth surfaces as its own truthful state, not a generic failure.
+      if (p.status === 'needs_reconnect' || p.targets.some((t) => t.status === 'needs_reconnect')) { out.failed.push(p); continue; }
       if (p.status === 'failed' || badTargets(p).length > 0) { out.failed.push(p); continue; }
       const k = dayKey(p.scheduledAt, tz);
       if (k === today) out.today.push(p);
@@ -205,7 +207,30 @@ export function QueuePage({ me, navigate }: Props) {
                     Duplicate
                   </button>
                   {editable && (
-                    <button className="btn btn-sm" onClick={() => void act('Publishing now', () => api(`/api/posts/${p.id}/publish-now`, { method: 'POST' }))}>
+                    <button
+                      className="btn btn-sm"
+                      onClick={() =>
+                        void (async () => {
+                          try {
+                            const res = await api<{
+                              status: string; published?: number; failed?: number;
+                              needsReconnect?: number; errors?: string[];
+                            }>(`/api/posts/${p.id}/publish-now`, { method: 'POST' });
+                            if (res.status === 'published' && (res.published ?? 0) > 0) {
+                              toast('ok', 'Published — confirmed by the platform.');
+                            } else if ((res.failed ?? 0) > 0 || (res.needsReconnect ?? 0) > 0) {
+                              const detail = (res.errors ?? []).filter(Boolean).join(' ');
+                              toast('err', detail ? `Publishing failed: ${detail}` : 'Publishing failed. See details on this item.');
+                            } else {
+                              toast('ok', 'Publishing — waiting for platform confirmation.');
+                            }
+                            await load();
+                          } catch (e) {
+                            toast('err', e instanceof ApiError ? e.message : 'Publish now failed');
+                          }
+                        })()
+                      }
+                    >
                       Publish now
                     </button>
                   )}

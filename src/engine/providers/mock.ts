@@ -12,6 +12,16 @@ export class MockSocialAdapter implements PlatformAdapter {
   readonly capabilities = getCapabilities('mock');
 
   async publish(env: Env, input: PublishInput): Promise<PublishOutcome> {
+    // Fail closed: a mock account must never produce a "published" outcome on
+    // a deployment that has disabled the test provider.
+    if (env.MOCK_SOCIAL_ENABLED !== 'true') {
+      return {
+        kind: 'failed',
+        retryable: false,
+        errorCode: 'MOCK_DISABLED',
+        errorMessage: 'MockSocial is disabled on this deployment. Connect a real platform account instead.',
+      };
+    }
     const m = input.caption.match(/\[mock:(429|500|timeout|expire|invalidmedia|delay|dupe)\]/);
     const fault = m?.[1];
     const existing = idempotencyMap.get(input.idempotencyKey);
@@ -43,6 +53,9 @@ export class MockSocialAdapter implements PlatformAdapter {
   }
 
   async resolvePending(env: Env, account: SocialAccountRecord, externalId: string): Promise<PublishOutcome> {
+    if (env.MOCK_SOCIAL_ENABLED !== 'true') {
+      return { kind: 'failed', retryable: false, errorCode: 'MOCK_DISABLED', errorMessage: 'MockSocial is disabled on this deployment.' };
+    }
     const created = pendingCreated.get(externalId);
     if (created === undefined) {
       return { kind: 'failed', retryable: false, errorCode: 'UNKNOWN_CONTAINER', errorMessage: 'MockSocial no longer knows this container; it may have already been resolved.' };

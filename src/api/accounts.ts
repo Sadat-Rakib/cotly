@@ -288,7 +288,13 @@ export async function connectInstagramToken(req: Request, env: Env): Promise<Res
 }
 
 export async function connectMock(req: Request, env: Env): Promise<Response> {
-  if (env.MOCK_SOCIAL_ENABLED !== 'true') throw new HttpError(404, 'Mock accounts are not enabled on this server.');
+  // MockSocial must NEVER silently replace a real provider in production: only
+  // localhost/dev deployments (or explicit opt-in) may create mock accounts.
+  const appUrl = String(env.APP_URL ?? '');
+  const isLocal = /localhost|127\.0\.0\.1|\.local|^http:\/\//i.test(appUrl);
+  if (env.MOCK_SOCIAL_ENABLED !== 'true' || (!isLocal && env.ALLOW_MOCK_IN_PROD !== 'true')) {
+    throw new HttpError(404, 'Mock accounts are not enabled on this server. Connect a real platform account instead.');
+  }
   const userId = await requireSession(env, req);
   const body = await readJson(req);
   const displayName = String(body.displayName ?? '').trim() || 'MockSocial';

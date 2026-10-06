@@ -128,6 +128,8 @@ export function ComposePage({ me, navigate }: Props) {
   };
 
   // The only place POST /api/posts happens — after an explicit confirm click.
+  // Publish Now calls the immediate publish endpoint and reports the REAL
+  // provider-confirmed result. Never claim Published from creation alone.
   const confirmSend = async () => {
     setErr(null);
     setFieldErrors({});
@@ -140,17 +142,47 @@ export function ComposePage({ me, navigate }: Props) {
     let ok = 0;
     try {
       for (const slot of run) {
-        await api('/api/posts', {
+        const created = await api<{ postId: string }>('/api/posts', {
           method: 'POST',
           body: slot === null
             ? { baseCaption: caption, mediaIds: readyMediaIds, targets, mode: 'now' }
             : { baseCaption: caption, mediaIds: readyMediaIds, targets, mode: 'scheduled', scheduledAt: slot, timezone: tz },
         });
-        ok += 1;
+        if (slot === null) {
+          // Publish Now: wait for the real provider response before reporting.
+          const res = await api<{
+            status: string; published?: number; failed?: number;
+            needsReconnect?: number; errors?: string[];
+          }>(`/api/posts/${created.postId}/publish-now`, { method: 'POST' });
+          if (res.status === 'published' && (res.published ?? 0) > 0) {
+            ok += 1;
+          } else if ((res.failed ?? 0) > 0 || (res.needsReconnect ?? 0) > 0) {
+            const detail = (res.errors ?? []).filter(Boolean).join(' ');
+            throw new ApiError(502, detail ? `Publishing failed: ${detail}` : 'Publishing failed. Check the Queue for details.');
+          } else {
+            // Still in flight (pending provider confirmation / retrying):
+            // truthful transitional state, never "Published".
+            const msg = 'Publishing — waiting for platform confirmation. Track it in the Queue.';
+            setSuccess(msg);
+            toast('ok', msg);
+            navigate('/app/queue');
+            setReviewing(false);
+            setCaption('');
+            setOverrides({});
+            setSelection({});
+            setMedia([]);
+            setSlots([]);
+            setMode('now');
+            return;
+          }
+        } else {
+          ok += 1;
+        }
       }
-      const msg = ok === 1 ? (mode === 'now' ? 'Post published.' : 'Post scheduled.') : `${ok} posts scheduled.`;
+      const msg = ok === 1 ? (mode === 'now' ? 'Post published — confirmed by the platform.' : 'Post scheduled.') : `${ok} posts scheduled.`;
       setSuccess(msg);
       toast('ok', msg);
+      if (mode === 'now') navigate('/app/queue?tab=published');
       setReviewing(false);
       setCaption('');
       setOverrides({});

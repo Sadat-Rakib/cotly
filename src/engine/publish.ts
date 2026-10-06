@@ -186,8 +186,12 @@ export async function applyOutcome(
       return 'published';
     }
     case 'pending': {
+      // Stay in a truthful in-flight state: status='publishing' with the
+      // container id stored. A container creation is NOT a publication.
       await env.DB
-        .prepare('UPDATE post_targets SET provider_post_id = ?, next_retry_at = ?, updated_at = ? WHERE id = ?')
+        .prepare(
+          `UPDATE post_targets SET status = 'publishing', provider_post_id = ?, next_retry_at = ?, attempt_count = attempt_count + 1, updated_at = ? WHERE id = ?`,
+        )
         .bind(outcome.externalId, now + PENDING_RETRY_SECONDS, now, t.id)
         .run();
       return 'pending';

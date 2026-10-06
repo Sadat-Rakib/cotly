@@ -336,7 +336,16 @@ async function createNowPost(caption = 'Hello Cotly', override: string | undefin
   if (override !== undefined) target.captionOverride = override;
   const res = await api('/api/posts', 'POST', { baseCaption: caption, targets: [target], mode: 'now' }, { auth: true, csrf: true });
   expect(res.status).toBe(201);
-  const postId = ((await res.json()) as { postId: string }).postId;
+  const created = (await res.json()) as { postId: string; status: string };
+  // ONE publishing authority: create() only stores scheduled rows; the
+  // immediate publish lives in publish-now (mirrors Compose UI flow).
+  expect(created.status).toBe('scheduled');
+  const postId = created.postId;
+  const pub = await api(`/api/posts/${postId}/publish-now`, 'POST', undefined, { auth: true, csrf: true });
+  expect(pub.status).toBe(200);
+  const pubBody = (await pub.json()) as { status: string; published: number };
+  expect(pubBody.status).toBe('published');
+  expect(pubBody.published).toBe(1);
   const tgt = await e.DB.prepare('SELECT id FROM post_targets WHERE post_id = ?').bind(postId).first<{ id: string }>();
   return { postId, targetId: tgt!.id };
 }
@@ -344,16 +353,19 @@ async function createNowPost(caption = 'Hello Cotly', override: string | undefin
 test('create post mode now writes post + target rows', async () => {
   const { postId } = await createNowPost();
   const post = await e.DB.prepare('SELECT status, publish_mode, scheduled_at, owner_id, timezone FROM posts WHERE id = ?').bind(postId).first<{ status: string; publish_mode: string; scheduled_at: number; owner_id: string; timezone: string }>();
-  // Publish-now runs a scheduler tick inline, so the post is published.
+  // create() stores scheduled; publish-now runs the SAME pipeline immediately
+  // and only marks published on provider confirmation.
   expect(post?.status).toBe('published');
   expect(post?.publish_mode).toBe('now');
   expect(Math.abs((post?.scheduled_at ?? 0) - nowS())).toBeLessThan(5);
   expect(post?.owner_id).toBe('owner');
-  const tgt = await e.DB.prepare('SELECT platform, status, publish_generation, caption_override FROM post_targets WHERE post_id = ?').bind(postId).first<{ platform: string; status: string; publish_generation: number; caption_override: string | null }>();
+  const tgt = await e.DB.prepare('SELECT platform, status, publish_generation, caption_override, provider_post_id FROM post_targets WHERE post_id = ?').bind(postId).first<{ platform: string; status: string; publish_generation: number; caption_override: string | null; provider_post_id: string | null }>();
   expect(tgt?.platform).toBe('mock');
   expect(tgt?.status).toBe('published');
-  expect(tgt?.publish_generation).toBe(1);
+  // create (gen 1) + publish-now bump (gen 2) — idempotency key changes per attempt.
+  expect(tgt?.publish_generation).toBe(2);
   expect(tgt?.caption_override).toBe('Hello override');
+  expect(tgt?.provider_post_id).toMatch(/^mock_/);
 });
 
 test('post get + queue view return the documented shape', async () => {
@@ -363,7 +375,7 @@ test('post get + queue view return the documented shape', async () => {
   const body = (await one.json()) as { id: string; baseCaption: string; status: string; scheduledAt: number; timezone: string; media: unknown[]; targets: Array<{ id: string; accountId: string; provider: string; accountName: string; status: string; lastError: string | null }> };
   expect(body.id).toBe(postId);
   expect(body.baseCaption).toBe('Hello Cotly');
-  // Publish-now publishes inline, so the post is already published here.
+  // createNowPost runs publish-now, so the post is provider-confirmed here.
   expect(body.status).toBe('published');
   expect(body.media).toEqual([]);
   expect(body.targets[0]?.id).toBe(targetId);
@@ -435,9 +447,17 @@ test('scheduled create, reschedule, publish-now, duplicate, delete', async () =>
 
   const pub = await api(`/api/posts/${schedPostId}/publish-now`, 'POST', undefined, { auth: true, csrf: true });
   expect(pub.status).toBe(200);
+  const pubBody = (await pub.json()) as { status: string; published: number; failed: number; needsReconnect: number; errors: string[] };
+  // Publish-now runs the SAME pipeline immediately and reports the real outcome.
+  expect(pubBody.status).toBe('published');
+  expect(pubBody.published).toBe(1);
+  expect(pubBody.failed).toBe(0);
   const mode = await e.DB.prepare('SELECT publish_mode, status FROM posts WHERE id = ?').bind(schedPostId).first<{ publish_mode: string; status: string }>();
   expect(mode?.publish_mode).toBe('now');
-  expect(mode?.status).toBe('scheduled');
+  expect(mode?.status).toBe('published');
+  const tgtAfter = await e.DB.prepare('SELECT status, provider_post_id FROM post_targets WHERE post_id = ?').bind(schedPostId).first<{ status: string; provider_post_id: string | null }>();
+  expect(tgtAfter?.status).toBe('published');
+  expect(tgtAfter?.provider_post_id).toMatch(/^mock_/);
 
   const dup = await api(`/api/posts/${schedPostId}/duplicate`, 'POST', undefined, { auth: true, csrf: true });
   expect(dup.status).toBe(201);

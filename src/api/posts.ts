@@ -164,6 +164,24 @@ export async function create(req: Request, env: Env, userId: string): Promise<Re
 
   const now = nowS();
   const postId = `post_${randomId(8)}`;
+  // Double-click / double-submit guard: reject an identical publish created
+  // within the last 60 seconds (same owner, caption, schedule and targets).
+  const targetSig = targets.map((t) => t.accountId).sort().join('|');
+  const recent = await env.DB
+    .prepare('SELECT id FROM posts WHERE owner_id = ? AND base_caption = ? AND scheduled_at = ? AND created_at > ? LIMIT 5')
+    .bind(userId, baseCaption, scheduledAt, now - 60)
+    .all<{ id: string }>();
+  for (const cand of recent.results ?? []) {
+    const trows = await env.DB
+      .prepare('SELECT social_account_id FROM post_targets WHERE post_id = ? ORDER BY social_account_id')
+      .bind(cand.id)
+      .all<{ social_account_id: string }>();
+    const candSig = (trows.results ?? []).map((t) => t.social_account_id).sort().join('|');
+    if (candSig === targetSig) {
+      throw new HttpError(409, 'This exact post was just created. Check the Queue before posting it again.');
+    }
+  }
+
   await env.DB
     .prepare(
       `INSERT INTO posts (id, owner_id, base_caption, status, scheduled_at, timezone, publish_mode, media_count, created_at, updated_at)
@@ -192,19 +210,29 @@ export async function create(req: Request, env: Env, userId: string): Promise<Re
       .bind(`tgt_${randomId(8)}`, postId, acc.id, acc.provider, isStr(t.captionOverride) ? t.captionOverride : null, scheduledAt, now, now)
       .run();
   }
-  // Publish-now must actually publish: run a scheduler tick synchronously so
-  // the response reflects the real outcome (published/failed) instead of
-  // silently sitting in the queue for up to a minute. The tick is idempotent
-  // and claims only due targets, so scheduled posts are untouched. A tick
-  // failure never fails the POST — the cron retries on its own.
-  if (mode === 'now') {
-    try {
-      await runSchedulerTick(env);
-    } catch {
-      // fall through: the next cron tick will pick this target up
-    }
-  }
-  return json({ postId }, 201);
+  // ONE publishing authority: create() only stores rows in 'scheduled'.
+  // Immediate execution lives in publishNow() (Compose calls it right after
+  // create; Queue calls it directly). Running the tick here AND there would
+  // publish twice under different idempotency keys.
+  // Truthful response: report the stored (scheduled) state. publishNow()
+  // returns the REAL provider-confirmed outcome.
+  const statusRow = await env.DB.prepare('SELECT status FROM posts WHERE id = ?').bind(postId).first<{ status: string }>();
+  const targetRows = await env.DB
+    .prepare('SELECT t.platform, t.status, t.last_error FROM post_targets t WHERE t.post_id = ? ORDER BY t.created_at, t.rowid')
+    .bind(postId)
+    .all<{ platform: string; status: string; last_error: string | null }>();
+  return json(
+    {
+      postId,
+      status: statusRow?.status ?? 'scheduled',
+      targets: (targetRows.results ?? []).map((t) => ({
+        provider: t.platform,
+        status: t.status,
+        ...(t.last_error ? { error: t.last_error } : {}),
+      })),
+    },
+    201,
+  );
 }
 
 const VIEWS: Record<string, string[]> = {
@@ -426,19 +454,67 @@ export async function cancel(env: Env, userId: string, id: string): Promise<Resp
   return json({ ok: true });
 }
 
+async function publishNowResult(env: Env, id: string): Promise<Response> {
+  // Read the truthful state directly from D1 (getOne returns the ViewPost
+  // shape, not {post:...} — parsing it as such crashed publish-now with a 500).
+  const postRow = await env.DB.prepare('SELECT status FROM posts WHERE id = ?').bind(id).first<{ status: string }>();
+  const trows = await env.DB
+    .prepare('SELECT status, last_error FROM post_targets WHERE post_id = ?')
+    .bind(id)
+    .all<{ status: string; last_error: string | null }>();
+  const targets = trows.results ?? [];
+  const published = targets.filter((t) => t.status === 'published').length;
+  const failed = targets.filter((t) => t.status === 'failed');
+  const reconnect = targets.filter((t) => t.status === 'needs_reconnect');
+  const inFlightNow = targets.filter((t) => ['scheduled', 'claimed', 'publishing', 'retrying'].includes(t.status)).length;
+  return json({
+    ok: true,
+    postId: id,
+    status: postRow?.status ?? 'publishing',
+    published,
+    failed: failed.length,
+    needsReconnect: reconnect.length,
+    inFlight: inFlightNow,
+    errors: [...failed, ...reconnect].map((t) => t.last_error).filter(Boolean).slice(0, 5),
+  });
+}
+
 export async function publishNow(env: Env, userId: string, id: string): Promise<Response> {
   const post = await rawPost(env, userId, id);
   if (String(post.status) === 'published') throw new HttpError(409, 'This post was already published.');
+  // Double-click / double-submit guard: if targets are already in flight from a
+  // concurrent Publish Now, report the in-flight state instead of re-queueing.
+  const inFlight = await env.DB
+    .prepare(`SELECT COUNT(*) AS n FROM post_targets WHERE post_id = ? AND status IN ('claimed','publishing','retrying')`)
+    .bind(id)
+    .first<{ n: number }>();
+  if ((inFlight?.n ?? 0) > 0) {
+    return publishNowResult(env, id);
+  }
   const now = nowS();
-  await env.DB.prepare(`UPDATE posts SET scheduled_at = ?, status = 'scheduled', publish_mode = 'now', updated_at = ? WHERE id = ?`).bind(now, now, id).run();
+  await env.DB.prepare(`UPDATE posts SET scheduled_at = ?, status = 'publishing', publish_mode = 'now', updated_at = ? WHERE id = ?`).bind(now, now, id).run();
+  // Reset every non-terminal, non-published target so an explicit Publish Now
+  // also retries failed/needs_reconnect rows (per-target retry stays for queue
+  // use). Published/assisted rows are never re-published — no duplicates.
+  // scheduled_at MUST move to now: the scheduler only claims targets with
+  // scheduled_at <= now, so leaving a future time would make Publish Now wait
+  // for the cron instead of publishing immediately.
   await env.DB
     .prepare(
-      `UPDATE post_targets SET status = 'scheduled', publish_generation = publish_generation + 1, next_retry_at = NULL, updated_at = ?
-       WHERE post_id = ? AND status IN ('draft','scheduled','cancelled')`,
+      `UPDATE post_targets SET status = 'scheduled', scheduled_at = ?, publish_generation = publish_generation + 1, next_retry_at = NULL, last_error = NULL, updated_at = ?
+       WHERE post_id = ? AND status IN ('draft','scheduled','cancelled','failed','needs_reconnect','retrying')`,
     )
-    .bind(now, id)
+    .bind(now, now, id)
     .run();
-  return json({ ok: true });
+  // Publish-now executes the SAME pipeline as the scheduler, immediately.
+  try {
+    await runSchedulerTick(env);
+  } catch {
+    // the next cron tick retries; the queue view reflects the real state
+  }
+  // Truthful result: re-read the real post/target state AFTER the immediate
+  // publish attempt. Never claim PUBLISHED from job creation alone.
+  return publishNowResult(env, id);
 }
 
 export async function duplicate(env: Env, userId: string, id: string): Promise<Response> {

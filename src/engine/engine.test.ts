@@ -14,6 +14,7 @@ const nowS = (): number => Math.floor(Date.now() / 1000);
 beforeAll(async () => {
   // Secrets are not part of wrangler.toml vars; provide one if the pool did not load .dev.vars.
   (env as unknown as { ENCRYPTION_SECRET?: string }).ENCRYPTION_SECRET = SECRET;
+  (env as unknown as Record<string, string | undefined>).MOCK_SOCIAL_ENABLED = 'true';
   // Force the binding-only store so cleanup exercises the miniflare R2 binding
   // even when .dev.vars carries S3 credentials for the real object store.
   for (const k of ['MEDIA_S3_ENDPOINT', 'MEDIA_S3_BUCKET', 'MEDIA_S3_REGION', 'MEDIA_S3_ACCESS_KEY_ID', 'MEDIA_S3_SECRET_ACCESS_KEY']) {
