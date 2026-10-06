@@ -5,7 +5,7 @@ import { randomId } from '../lib/crypto';
 import { HttpError, json, readJson } from '../lib/http';
 import { requireSession } from '../lib/sessions';
 import { isValidTimezone, nowS, PROVIDER_LABEL } from './_shared';
-import { runSchedulerTick } from '../engine/cron';
+import { publishPostNow } from '../engine/cron';
 import { allowAttempt } from '../lib/ratelimit';
 
 interface FieldError {
@@ -506,9 +506,12 @@ export async function publishNow(env: Env, userId: string, id: string): Promise<
     )
     .bind(now, now, id)
     .run();
-  // Publish-now executes the SAME pipeline as the scheduler, immediately.
+  // Publish-now executes the SAME pipeline as the scheduler, immediately —
+  // but scoped to this post only (no global tick: unrelated due posts,
+  // pending resolution and media cleanup stay on the cron, so the response
+  // carries the real provider outcome without the full-tick wait).
   try {
-    await runSchedulerTick(env);
+    await publishPostNow(env, id);
   } catch {
     // the next cron tick retries; the queue view reflects the real state
   }
@@ -558,6 +561,6 @@ export async function retryTarget(env: Env, userId: string, targetId: string): P
     .prepare(`UPDATE post_targets SET status = 'scheduled', next_retry_at = NULL, last_error = NULL, publish_generation = publish_generation + 1, updated_at = ? WHERE id = ? AND status IN ('failed','needs_reconnect')`)
     .bind(now, targetId)
     .run();
-  await env.DB.prepare(`UPDATE posts SET status = 'scheduled', updated_at = ? WHERE id = ? AND status IN ('failed','cancelled')`).bind(now, t.post_id).run();
+  await env.DB.prepare(`UPDATE posts SET status = 'scheduled', updated_at = ? WHERE id = ? AND status IN ('failed','needs_reconnect','cancelled')`).bind(now, t.post_id).run();
   return json({ ok: true });
 }

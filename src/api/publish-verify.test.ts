@@ -62,6 +62,28 @@ beforeAll(async () => {
   mockAcc = ((await mock.json()) as { id: string }).id;
 });
 
+test('connection survives a fresh login/session', async () => {
+  // New session, same owner: the connected account must still be Connected.
+  const login = await handleApi(
+    new Request(`${BASE}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'verify@test.dev', password: 'password123' }) }),
+    e,
+    ctx,
+  );
+  expect(login.status).toBe(200);
+  const h = login.headers as unknown as { getSetCookie?: () => string[] };
+  const raws = typeof h.getSetCookie === 'function' ? h.getSetCookie() : [login.headers.get('set-cookie') ?? ''];
+  let jar = '';
+  for (const raw of raws) {
+    const pair = raw.split(';')[0] ?? '';
+    const i = pair.indexOf('=');
+    if (i > 0) jar += (jar ? '; ' : '') + `${pair.slice(0, i).trim()}=${pair.slice(i + 1).trim()}`;
+  }
+  const list = await handleApi(new Request(`${BASE}/api/accounts`, { headers: { cookie: jar } }), e, ctx);
+  expect(list.status).toBe(200);
+  const rows = (await list.json()) as Array<{ id: string; status: string }>;
+  expect(rows.find((a) => a.id === mockAcc)?.status).toBe('connected');
+});
+
 test('Publish Now publishes immediately without waiting for scheduler', async () => {
   const created = await api('/api/posts', 'POST', { baseCaption: 'Verify now', targets: [{ accountId: mockAcc }], mode: 'now' });
   expect(created.status).toBe(201);

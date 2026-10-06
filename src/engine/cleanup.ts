@@ -29,8 +29,12 @@ export async function rollupAffectedPosts(env: Env, postIds: Iterable<string>, n
       continue;
     }
     const status = (r.published ?? 0) > 0 ? 'published' : (r.reconnect ?? 0) > 0 ? 'needs_reconnect' : 'failed';
+    // Recovery must be possible: a post that already settled into failed /
+    // needs_reconnect (e.g. expired token) flips to published once a retry
+    // brings provider confirmation. Published and user-cancelled are sticky
+    // and are never downgraded.
     const res = await env.DB
-      .prepare(`UPDATE posts SET status = ?, completed_at = ?, updated_at = ? WHERE id = ? AND status NOT IN ('published','failed','needs_reconnect','cancelled')`)
+      .prepare(`UPDATE posts SET status = ?, completed_at = ?, updated_at = ? WHERE id = ? AND status NOT IN ('published','cancelled')`)
       .bind(status, now, now, postId)
       .run();
     if (res.meta.changes) rolledUp++;

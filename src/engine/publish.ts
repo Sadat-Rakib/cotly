@@ -233,6 +233,45 @@ export async function applyOutcome(
 
 const ACCOUNT_GONE = { kind: 'failed', retryable: false, errorCode: 'ACCOUNT_GONE', errorMessage: 'The connected account for this post is no longer available. Reconnect the account and retry.' } as const;
 
+// Rows stuck here can never be touched again: claimDueTargets only takes
+// scheduled/retrying, and resolveDuePending requires provider_post_id AND
+// next_retry_at. Only a crash/restart between the claimed->publishing guard
+// and applyOutcome strands rows like this (or a 'claimed' row whose tick
+// died). Re-queue them with the SAME publish_generation so the idempotency
+// key is unchanged — a provider call that actually landed will not double
+// post on adapters that honor the key, and the alternative (stuck forever)
+// is strictly worse. Threshold is far above the slowest in-request publish.
+const STALE_INFLIGHT_SECONDS = 5 * 60;
+
+export async function reclaimStaleTargets(env: Env, now: number): Promise<{ reclaimed: number; postIds: string[] }> {
+  const postIds = new Set<string>();
+  const rows =
+    (
+      await env.DB
+        .prepare(
+          `SELECT id, post_id FROM post_targets
+           WHERE (status = 'claimed' AND updated_at <= ?)
+              OR (status = 'publishing' AND provider_post_id IS NULL AND updated_at <= ?)`,
+        )
+        .bind(now - STALE_INFLIGHT_SECONDS, now - STALE_INFLIGHT_SECONDS)
+        .all<{ id: string; post_id: string }>()
+    ).results ?? [];
+  for (const r of rows) {
+    const res = await env.DB
+      .prepare(
+        `UPDATE post_targets SET status = 'scheduled', updated_at = ?
+         WHERE id = ? AND status IN ('claimed','publishing') AND provider_post_id IS NULL`,
+      )
+      .bind(now, r.id)
+      .run();
+    if (res.meta.changes) {
+      postIds.add(r.post_id);
+      await logActivity(env, now, 'warn', 'stale_reclaim', `Re-queued target ${r.id} stranded in-flight; will publish on the next tick.`, 'post_target', r.id).catch(() => {});
+    }
+  }
+  return { reclaimed: postIds.size, postIds: [...postIds] };
+}
+
 export async function publishClaimedTarget(env: Env, t: ClaimedTarget, now: number): Promise<PublishResult> {
   let adapter: PlatformAdapter;
   try {

@@ -162,15 +162,16 @@ describe('threads adapter', () => {
     try {
       const calls = stubFetch([
         () => jsonRes(200, { id: 'ct_3' }),
-        ...Array.from({ length: 10 }, () => () => jsonRes(400, { error: { code: 24, message: 'The requested resource does not exist' } })),
+        ...Array.from({ length: 4 }, () => () => jsonRes(400, { error: { code: 24, message: 'The requested resource does not exist' } })),
       ]);
       const pending = new ThreadsAdapter().publish(env, input());
-      for (let i = 0; i < 12; i++) await vi.advanceTimersByTimeAsync(3000);
+      for (let i = 0; i < 6; i++) await vi.advanceTimersByTimeAsync(2000);
       const out = await pending;
       expect(out).toMatchObject({ kind: 'failed', retryable: true, errorCode: 'CONTAINER_PROCESSING' });
-      // Exactly the 10 bounded publish attempts with the same creation_id —
-      // retries can never duplicate the post (one creation_id publishes once).
-      expect(calls.filter((c) => c.url.includes('threads_publish'))).toHaveLength(10);
+      // Exactly the 4 bounded in-request attempts with the same creation_id —
+      // retries can never duplicate the post (one creation_id publishes once);
+      // the retry ladder (not the HTTP request) carries the wait from here.
+      expect(calls.filter((c) => c.url.includes('threads_publish'))).toHaveLength(4);
     } finally {
       vi.useRealTimers();
     }

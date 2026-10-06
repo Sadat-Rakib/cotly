@@ -39,7 +39,12 @@ export function QueuePage({ me, navigate }: Props) {
   const toast = useToast();
   const tz = me.timezone;
   const [posts, setPosts] = useState<PostRow[]>([]);
-  const [tab, setTab] = useState<Tab>('today');
+  // Compose navigates here with ?tab=published after a confirmed publish —
+  // honor it so the user lands on backend truth instead of an empty Today.
+  const [tab, setTab] = useState<Tab>(() => {
+    const q = new URLSearchParams(window.location.search).get('tab');
+    return (['today', 'tomorrow', 'later', 'failed', 'published'] as Tab[]).includes(q as Tab) ? (q as Tab) : 'today';
+  });
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<PostRow | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);

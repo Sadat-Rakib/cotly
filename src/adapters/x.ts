@@ -59,8 +59,28 @@ function periodYm(): string {
   return new Date().toISOString().slice(0, 7);
 }
 
+// 401 always means the token is dead. 403 from X usually means something
+// else (free-tier write limits, duplicate content, forbidden) — only treat it
+// as auth failure when the body proves the token invalid/expired. Anything
+// else must NEVER flip the account to needs_reconnect (reconnect loop).
+function isTokenError(resp: ProviderResponse): boolean {
+  const data = (resp.data ?? {}) as { detail?: unknown; title?: unknown; error?: unknown; errors?: Array<{ code?: unknown; message?: unknown }> };
+  const texts = [
+    typeof data.detail === 'string' ? data.detail : '',
+    typeof data.title === 'string' ? data.title : '',
+    typeof data.error === 'string' ? data.error : '',
+    ...((Array.isArray(data.errors) ? data.errors : []).flatMap((e) => [
+      typeof e?.message === 'string' ? (e.message as string) : '',
+      typeof e?.code === 'number' || typeof e?.code === 'string' ? String(e.code) : '',
+    ])),
+  ].join(' ').toLowerCase();
+  if (/invalid or expired token|could not authenticate|invalid.*token|expired.*token|unauthorized|authenticate/i.test(texts)) return true;
+  const codes = (Array.isArray(data.errors) ? data.errors : []).map((e) => Number(e?.code)).filter((n) => Number.isFinite(n));
+  return codes.some((c) => c === 32 || c === 89 || c === 99);
+}
+
 function mapApiError(resp: ProviderResponse, secrets: Secrets): never {
-  if (resp.status === 401 || resp.status === 403) {
+  if (resp.status === 401 || (resp.status === 403 && isTokenError(resp))) {
     throw needsReconnect(secrets, 'Your X connection expired. Reconnect X and retry.');
   }
   if (resp.status === 429) {
@@ -188,7 +208,7 @@ export class XAdapter implements PlatformAdapter {
       const handle = typeof profile?.username === 'string' && profile.username ? `@${profile.username}` : account.displayName;
       return { ok: true, detail: `Token valid — identity ${redact(handle, secrets)}.` };
     }
-    if (resp.status === 401 || resp.status === 403) {
+    if (resp.status === 401 || (resp.status === 403 && isTokenError(resp))) {
       return { ok: false, detail: 'Your X connection expired. Reconnect X.' };
     }
     const detail = (resp.data as { detail?: unknown } | null)?.detail;
@@ -320,8 +340,10 @@ export class XAdapter implements PlatformAdapter {
     return mediaId;
   }
 
-  // Poll STATUS until succeeded (bounded within this request); a failure or a
-  // timeout becomes a retryable outcome so nothing is published half-baked.
+  // Poll STATUS until succeeded with a tight in-request budget (Publish Now
+  // must not block the HTTP request for over a minute); a failure or a
+  // timeout becomes a retryable outcome so nothing is published half-baked
+  // and the retry ladder resumes without duplicating the post.
   private async awaitProcessing(
     mediaId: string,
     info: { state?: unknown; check_after_secs?: unknown },
@@ -329,8 +351,8 @@ export class XAdapter implements PlatformAdapter {
   ): Promise<void> {
     const stateOf = (i: { state?: unknown }) => (typeof i.state === 'string' ? i.state : 'pending');
     let state = stateOf(info);
-    let wait = typeof info.check_after_secs === 'number' ? Math.min(info.check_after_secs, 10) : 5;
-    const deadline = Date.now() + 90_000;
+    let wait = typeof info.check_after_secs === 'number' ? Math.min(info.check_after_secs, 5) : 2;
+    const deadline = Date.now() + 20_000;
     while (state !== 'succeeded' && Date.now() < deadline) {
       if (state === 'failed') {
         throw failRetryable(secrets, 'MEDIA_PROCESSING', 'X could not process this media. Cotly will retry automatically.');

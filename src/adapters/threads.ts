@@ -228,14 +228,15 @@ export class ThreadsAdapter implements PlatformAdapter {
       const containerId = requireId(container, secrets, 'Threads');
       console.log('[threads-publish] container created', containerId.slice(0, 8) + '…', 'media_type:', params.get('media_type'));
       // Meta processes the container asynchronously: publishing too early
-      // fails with (24) "The requested resource does not exist". Retry the
-      // publish for ~30s — safe, because a creation_id can only be published
-      // once, so a retry can never duplicate the post. Container status
-      // polling is not an option: status_code does not exist as a field on
-      // graph.threads.net container nodes.
+      // fails with (24) "The requested resource does not exist". Retry briefly
+      // in-request (bounded so Publish Now answers fast), then hand off to the
+      // retry ladder / pending resolution — safe, because a creation_id can
+      // only be published once, so a retry can never duplicate the post.
+      // Container status polling is not an option: status_code does not exist
+      // as a field on graph.threads.net container nodes.
       const publishPath = `/${uid}/threads_publish?creation_id=${encodeURIComponent(containerId)}`;
       let pub: ProviderResponse | null = null;
-      for (let attempt = 0; attempt < 10 && !pub; attempt++) {
+      for (let attempt = 0; attempt < 4 && !pub; attempt++) {
         let resp: ProviderResponse;
         try {
           resp = await httpJson(`${GRAPH}${publishPath}`, {
@@ -244,8 +245,8 @@ export class ThreadsAdapter implements PlatformAdapter {
             body: new URLSearchParams(),
           });
         } catch (netErr) {
-          if (attempt === 9) throw netErr;
-          await new Promise((r) => setTimeout(r, 3000));
+          if (attempt === 3) throw netErr;
+          await new Promise((r) => setTimeout(r, 2000));
           continue;
         }
         if (resp.ok) {
@@ -254,11 +255,11 @@ export class ThreadsAdapter implements PlatformAdapter {
         }
         const pErr = (resp.data as { error?: { code?: number } } | null)?.error;
         if (pErr?.code !== 24) {
-          // A real rejection, not the processing race: run the full failure
+          // A real rejection, not the processing race: run the failure
           // diagnostics once (this.post throws with the humanized error).
           await this.post(env, secrets, publishPath, new URLSearchParams());
         }
-        if (attempt < 9) await new Promise((r) => setTimeout(r, 3000));
+        if (attempt < 3) await new Promise((r) => setTimeout(r, 2000));
       }
       if (!pub) {
         throw failRetryable(secrets, 'CONTAINER_PROCESSING', 'Threads is still processing this post. Cotly will retry automatically.');
@@ -280,19 +281,29 @@ export class ThreadsAdapter implements PlatformAdapter {
   // permalinks that never materialize.
   async resolvePending(env: Env, account: SocialAccountRecord, externalId: string): Promise<PublishOutcome> {
     const secrets = secretsOf(env, account.accessToken);
+    let resp: ProviderResponse;
     try {
-      const resp = await httpJson(`${GRAPH}/${externalId}?fields=permalink`, {
+      resp = await httpJson(`${GRAPH}/${externalId}?fields=permalink`, {
         headers: { authorization: `Bearer ${secrets[0] ?? ''}` },
       });
-      if (resp.ok) {
-        const permalink = (resp.data as { permalink?: string } | null)?.permalink;
-        if (permalink) {
-          return { kind: 'confirmed', externalId, permalink, ...(resp.raw ? { raw: resp.raw } : {}) };
-        }
-      }
-      return { kind: 'pending', externalId };
     } catch (e) {
       return outcomeFromError(e);
+    }
+    if (resp.ok) {
+      const permalink = (resp.data as { permalink?: string } | null)?.permalink;
+      if (permalink) {
+        return { kind: 'confirmed', externalId, permalink, ...(resp.raw ? { raw: resp.raw } : {}) };
+      }
+      return { kind: 'pending', externalId };
+    }
+    // A dead token must surface needs_reconnect (and flip the account) even
+    // from the pending path; transient errors stay pending for the next tick.
+    try {
+      throw graphError(resp, secrets, 'Threads');
+    } catch (e) {
+      const out = outcomeFromError(e);
+      if (out.kind === 'needs_reconnect') return out;
+      return { kind: 'pending', externalId };
     }
   }
 
@@ -340,49 +351,9 @@ export class ThreadsAdapter implements PlatformAdapter {
       } catch (meErr) {
         console.log('[threads-publish] pre-publish /me unavailable:', redact(String(meErr), secrets).slice(0, 160));
       }
-      // Decisive diagnostic 2: what did Meta actually grant this token? The
-      // official debugger lives on graph.facebook.com and accepts the Threads
-      // app's own app token; graph.threads.net rejects it.
-      try {
-        const appToken = `${env.THREADS_CLIENT_ID ?? ''}|${env.THREADS_CLIENT_SECRET ?? ''}`;
-        const dbg = await httpJson(
-          `https://graph.facebook.com/debug_token?input_token=${encodeURIComponent(secrets[0] ?? '')}&access_token=${encodeURIComponent(appToken)}`,
-        );
-        const d = (dbg.data as { data?: Record<string, unknown> } | null)?.data ?? {};
-        console.log('[threads-publish] debug_token', {
-          isValid: d.is_valid,
-          tokenType: d.type,
-          appIdSuffix: `…${String(d.app_id ?? '').slice(-4)}`,
-          userIdSuffix: typeof d.user_id === 'string' ? `…${String(d.user_id).slice(-6)}` : null,
-          scopes: d.scopes,
-          expiresAt: d.expires_at,
-          debugError: (dbg.data as { error?: unknown } | null)?.error,
-        });
-      } catch (dbgErr) {
-        console.log('[threads-publish] debug_token unavailable:', redact(String(dbgErr), secrets).slice(0, 160));
-      }
-      // Decisive diagnostic 3: is the publish edge reachable at all? With
-      // threads_content_publish granted, Meta validates params (bogus
-      // media_type => param error); without it, the node is masked and every
-      // POST returns the same 100/33. Only the error shape is logged.
-      const uidFromPath = (path.split('?')[0] ?? path).split('/')[1] ?? 'unknown';
-      for (const probe of [`/${uidFromPath}/threads?media_type=BOGUS&text=probe`, `/${uidFromPath}/threads_publish`]) {
-        try {
-          const pr = await httpJson(`${GRAPH}${probe}`, {
-            method: 'POST',
-            headers: { authorization: `Bearer ${secrets[0] ?? ''}` },
-            body: new URLSearchParams(),
-          });
-          const pe = (pr.data as { error?: { code?: number; message?: string; error_subcode?: number } } | null)?.error;
-          console.log('[threads-publish] edge probe', probe.split('?')[0], '=>', pr.ok ? `SUCCESS http ${pr.status}` : {
-            code: pe?.code ?? null,
-            subcode: pe?.error_subcode ?? null,
-            message: redact(String(pe?.message ?? ''), secrets).slice(0, 120),
-          });
-        } catch (probeErr) {
-          console.log('[threads-publish] edge probe', probe.split('?')[0], 'unavailable:', redact(String(probeErr), secrets).slice(0, 160));
-        }
-      }
+      // Removed: debug_token + edge probes cost 3 extra round trips on every
+      // failure (Publish Now latency). The /me probe above plus the final
+      // error log below carry the decisive signal.
       const err = (resp.data as { error?: { code?: number; message?: string; error_subcode?: number } } | null)?.error;
       console.log('[threads-publish] graph call failed', {
         httpStatus: resp.status,

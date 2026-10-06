@@ -114,6 +114,14 @@ export class InstagramAdapter implements PlatformAdapter {
     return { accessToken: data.access_token, ...(expiresAt ? { expiresAt } : {}) };
   }
 
+  // Meta token errors only (mirrors graphError's reconnect mapping).
+  private static isTokenErrorLocal(resp: ProviderResponse): boolean {
+    const err = (resp.data as { error?: Record<string, unknown> } | null)?.error ?? {};
+    const code = Number(err.code ?? 0);
+    const message = typeof err.message === 'string' ? err.message : '';
+    return code === 190 || code === 102 || /access token/i.test(message);
+  }
+
   async testConnection(env: Env, account: SocialAccountRecord): Promise<TestConnectionResult> {
     const secrets = secretsOf(env, account.accessToken);
     let resp: ProviderResponse;
@@ -130,7 +138,10 @@ export class InstagramAdapter implements PlatformAdapter {
       const kind = data.account_type ? ` (${String(data.account_type).toLowerCase()} account)` : '';
       return { ok: true, detail: `Token valid — identity ${identity}${kind}.` };
     }
-    if (resp.status === 401 || resp.status === 403) {
+    // 401 always means the token is dead; a 403 only counts when the body
+    // proves it (OAuthException code 190/102 or a token message) — other 403s
+    // (permissions, review mode) must not flip the account to reconnect.
+    if (resp.status === 401 || (resp.status === 403 && InstagramAdapter.isTokenErrorLocal(resp))) {
       return { ok: false, detail: 'Your Instagram connection expired. Reconnect Instagram.' };
     }
     return { ok: false, detail: 'Instagram returned an unexpected response. Try again.' };

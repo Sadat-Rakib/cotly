@@ -246,7 +246,10 @@ function isAuthFailure(resp: ProviderResponse): boolean {
 }
 
 function mapXrpcError(resp: ProviderResponse, secrets: Secrets): never {
-  if (resp.status === 401 || resp.status === 403) {
+  // 401 or a token-named XRPC error means the session is dead; a bare 403
+  // (e.g. a repo/record policy refusal) must not flip the account — only a
+  // genuine auth failure earns needs_reconnect.
+  if (isAuthFailure(resp)) {
     throw needsReconnect(secrets, 'Your Bluesky authorization expired. Reconnect Bluesky and retry.');
   }
   if (resp.status === 429) {

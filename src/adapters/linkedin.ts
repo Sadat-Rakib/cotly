@@ -25,8 +25,17 @@ export const SCOPE = 'openid profile w_member_social';
 
 const secretsOf = (env: Env, token?: string): Secrets => [token, env.LINKEDIN_CLIENT_SECRET];
 
+// 401 always means the token is dead. LinkedIn also returns 403 for
+// non-auth problems (missing product, version, UGC errors) — only a 403 that
+// proves the token invalid/expired may flip the account to needs_reconnect.
+function isTokenError(resp: ProviderResponse): boolean {
+  const data = (resp.data ?? {}) as { message?: unknown; status?: unknown };
+  const text = `${typeof data.message === 'string' ? data.message : ''} ${typeof data.status === 'string' || typeof data.status === 'number' ? String(data.status) : ''}`.toLowerCase();
+  return resp.status === 401 || /invalid.*token|expired.*token|unauthorized|not.*authorized.*token|revoked/i.test(text);
+}
+
 function mapRestError(resp: ProviderResponse, secrets: Secrets): never {
-  if (resp.status === 401 || resp.status === 403) {
+  if (isTokenError(resp)) {
     throw needsReconnect(secrets, 'Your LinkedIn connection expired. Reconnect LinkedIn and retry.');
   }
   if (resp.status === 429) {
@@ -106,7 +115,7 @@ export class LinkedInAdapter implements PlatformAdapter {
       }
       return { ok: false, detail: 'LinkedIn returned an unexpected response. Try again.' };
     }
-    if (resp.status === 401 || resp.status === 403) {
+    if (isTokenError(resp)) {
       return { ok: false, detail: 'Your LinkedIn connection expired. Reconnect LinkedIn.' };
     }
     const message = (resp.data as { message?: unknown } | null)?.message;
