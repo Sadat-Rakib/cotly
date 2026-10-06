@@ -1,5 +1,5 @@
 import type { Env } from '../contracts/env';
-import { HttpError, errJson } from '../lib/http';
+import { HttpError, errJson, json } from '../lib/http';
 import { requireCsrf, requireSession } from '../lib/sessions';
 import * as accounts from './accounts';
 import * as auth from './auth';
@@ -48,6 +48,10 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (method === 'POST' || method === 'PATCH' || method === 'DELETE') requireCsrf(req);
   if (method === 'POST' && path === '/api/auth/logout') return auth.logout(req, env);
   if (method === 'GET' && path === '/api/me') return auth.me(req, env);
+  if (method === 'GET' && path === '/api/version') {
+    const { VERSION_COMMIT, VERSION_BUILT_AT } = await import('../version');
+    return json({ app: 'cotly', commit: VERSION_COMMIT, builtAt: VERSION_BUILT_AT });
+  }
 
   const userId = await requireSession(env, req);
 

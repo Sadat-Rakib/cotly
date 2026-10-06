@@ -13,6 +13,7 @@ import {
   redact,
   testErrorDetail,
   testNetworkResult,
+  truncate,
   type ProviderResponse,
   type Secrets,
   type TestConnectionResult,
@@ -79,19 +80,71 @@ function isTokenError(resp: ProviderResponse): boolean {
   return codes.some((c) => c === 32 || c === 89 || c === 99);
 }
 
-function mapApiError(resp: ProviderResponse, secrets: Secrets): never {
+// Publish stages in order: the tweet is created only after media processing
+// reports succeeded, so a failure always names the exact failing stage.
+export type XStage = 'precheck' | 'media_init' | 'media_append' | 'media_finalize' | 'media_status' | 'create_post';
+
+interface XErrorFields {
+  title: string;
+  detail: string;
+  type: string;
+}
+
+function xErrorFields(resp: ProviderResponse): XErrorFields {
+  const data = (resp.data ?? {}) as { detail?: unknown; title?: unknown; type?: unknown; errors?: Array<{ message?: unknown }> };
+  const fromErrors = (Array.isArray(data.errors) ? data.errors : [])
+    .map((e) => (typeof e?.message === 'string' ? e.message : ''))
+    .filter(Boolean)
+    .join(' | ');
+  return {
+    title: typeof data.title === 'string' ? data.title : '',
+    detail: (typeof data.detail === 'string' && data.detail ? data.detail : fromErrors) || '',
+    type: typeof data.type === 'string' ? data.type : '',
+  };
+}
+
+// Edge request/transaction id when the API returns one. Header names only —
+// auth headers are never read or logged.
+function xRequestId(resp: ProviderResponse): string {
+  let id = '';
+  try {
+    resp.headers.forEach((v, k) => {
+      if (!id && /request|transaction/i.test(k)) id = v;
+    });
+  } catch {
+    // headers are always present in practice
+  }
+  return id.slice(0, 120);
+}
+
+// Single sanitized diagnostics point for every X provider failure. Logs stage,
+// HTTP status, X title/type/detail and the edge request id (tokens redacted),
+// and returns a short tag appended to the user-facing message so the exact
+// failing stage is visible in the Queue + diagnostics without a log dive.
+function xFailureTag(secrets: Secrets, stage: XStage, resp: ProviderResponse): string {
+  const f = xErrorFields(resp);
+  const reqId = xRequestId(resp);
+  console.log(
+    `[x-publish] stage=${stage} http=${resp.status}` +
+      (f.title ? ` title=${redact(f.title, secrets)}` : '') +
+      (f.type ? ` type=${redact(f.type, secrets)}` : '') +
+      (f.detail ? ` detail=${truncate(redact(f.detail, secrets), 200)}` : '') +
+      (reqId ? ` reqId=${reqId}` : ''),
+  );
+  return `[stage=${stage} http=${resp.status}${reqId ? ` ref=${reqId}` : ''}]`;
+}
+
+function mapApiError(resp: ProviderResponse, secrets: Secrets, stage: XStage): never {
   if (resp.status === 401 || (resp.status === 403 && isTokenError(resp))) {
     throw needsReconnect(secrets, 'Your X connection expired. Reconnect X and retry.');
   }
+  const tag = xFailureTag(secrets, stage, resp);
   if (resp.status === 429) {
-    throw failRetryable(secrets, 'RATE_LIMITED', 'X is temporarily rate limiting this account. Cotly will retry automatically.', resp.raw);
+    throw failRetryable(secrets, 'RATE_LIMITED', `X is temporarily rate limiting this account. Cotly will retry automatically. ${tag}`, resp.raw);
   }
-  const detail = (resp.data as { detail?: unknown; title?: unknown } | null) ?? {};
-  const message =
-    (typeof detail.detail === 'string' && detail.detail) ||
-    (typeof detail.title === 'string' && detail.title) ||
-    'X rejected this request.';
-  throw fail(secrets, `X_${resp.status}`, message, resp.raw);
+  const f = xErrorFields(resp);
+  const message = f.detail || f.title || 'X rejected this request.';
+  throw fail(secrets, `X_${resp.status}`, `${message} ${tag}`, resp.raw);
 }
 
 export class XAdapter implements PlatformAdapter {
@@ -243,7 +296,7 @@ export class XAdapter implements PlatformAdapter {
         headers: { authorization: `Bearer ${secrets[0] ?? ''}`, 'content-type': 'application/json' },
         body: JSON.stringify(body),
       });
-      if (!resp.ok) mapApiError(resp, secrets);
+      if (!resp.ok) mapApiError(resp, secrets, 'create_post');
       const created = (resp.data as { data?: { id?: unknown } | null })?.data;
       if (!created || typeof created.id !== 'string') {
         throw fail(secrets, 'NO_POST_ID', 'X did not return a post id for the published content.', resp.raw);
@@ -305,7 +358,7 @@ export class XAdapter implements PlatformAdapter {
         headers: { authorization: `Bearer ${secrets[0] ?? ''}` },
       },
     );
-    if (!init.ok) mapApiError(init, secrets);
+    if (!init.ok) mapApiError(init, secrets, 'media_init');
     const mediaId = (init.data as { media_id_string?: unknown } | null)?.media_id_string;
     if (typeof mediaId !== 'string' || !mediaId) {
       throw fail(secrets, 'UPLOAD_INIT_FAILED', 'X did not provide an upload location for the media.', init.raw);
@@ -320,10 +373,11 @@ export class XAdapter implements PlatformAdapter {
         body: chunk,
       });
       if (!append.ok) {
+        const tag = xFailureTag(secrets, 'media_append', append);
         throw failRetryable(
           secrets,
           'MEDIA_UPLOAD_FAILED',
-          'Cotly could not upload the media to X. Cotly will retry automatically.',
+          `Cotly could not upload the media to X. Cotly will retry automatically. ${tag}`,
           append.raw,
         );
       }
@@ -332,7 +386,7 @@ export class XAdapter implements PlatformAdapter {
       method: 'POST',
       headers: { authorization: `Bearer ${secrets[0] ?? ''}` },
     });
-    if (!finalize.ok) mapApiError(finalize, secrets);
+    if (!finalize.ok) mapApiError(finalize, secrets, 'media_finalize');
     const processing = (finalize.data as { processing_info?: { state?: unknown; check_after_secs?: unknown } } | null)?.processing_info;
     if (processing) {
       await this.awaitProcessing(mediaId, processing, secrets);
@@ -355,7 +409,7 @@ export class XAdapter implements PlatformAdapter {
     const deadline = Date.now() + 20_000;
     while (state !== 'succeeded' && Date.now() < deadline) {
       if (state === 'failed') {
-        throw failRetryable(secrets, 'MEDIA_PROCESSING', 'X could not process this media. Cotly will retry automatically.');
+        throw failRetryable(secrets, 'MEDIA_PROCESSING', 'X could not process this media. Cotly will retry automatically. [stage=media_status]');
       }
       await new Promise((r) => setTimeout(r, wait * 1000));
       const status = await httpJson(`${UPLOAD}?command=STATUS&media_id=${encodeURIComponent(mediaId)}`, {
@@ -363,15 +417,16 @@ export class XAdapter implements PlatformAdapter {
         headers: { authorization: `Bearer ${secrets[0] ?? ''}` },
       });
       if (!status.ok) {
-        throw failRetryable(secrets, 'MEDIA_PROCESSING', 'Cotly could not check the media processing state on X. Cotly will retry automatically.', status.raw);
+        const tag = xFailureTag(secrets, 'media_status', status);
+        throw failRetryable(secrets, 'MEDIA_PROCESSING', `Cotly could not check the media processing state on X. Cotly will retry automatically. ${tag}`, status.raw);
       }
       const next = (status.data as { processing_info?: { state?: unknown; check_after_secs?: unknown } } | null)?.processing_info;
       if (!next) break;
       state = stateOf(next);
-      wait = typeof next.check_after_secs === 'number' ? Math.min(next.check_after_secs, 10) : 5;
+      wait = typeof next.check_after_secs === 'number' ? Math.min(next.check_after_secs, 5) : 2;
     }
     if (state !== 'succeeded') {
-      throw failRetryable(secrets, 'MEDIA_PROCESSING', 'This media is still processing on X. Cotly will retry shortly.');
+      throw failRetryable(secrets, 'MEDIA_PROCESSING', 'This media is still processing on X. Cotly will retry shortly. [stage=media_status]');
     }
   }
 }

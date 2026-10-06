@@ -8,7 +8,7 @@
     "dev:cotly": "npm run dev",
     "build": "vite build",
     "test": "vitest run",
-    "deploy": "npm run build && wrangler deploy --config ./wrangler.prod.toml",
+    "deploy": "node scripts/stamp-version.js && npm run build && wrangler deploy --config ./wrangler.prod.toml",
     "db:local": "wrangler d1 migrations apply cotly-db --local --config ./wrangler.toml",
     "db:remote": "wrangler d1 migrations apply cotly-db --remote --config ./wrangler.prod.toml",
     "typecheck": "tsc --noEmit"

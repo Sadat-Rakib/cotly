@@ -84,6 +84,16 @@ test('connection survives a fresh login/session', async () => {
   expect(rows.find((a) => a.id === mockAcc)?.status).toBe('connected');
 });
 
+test('version endpoint identifies the running build', async () => {
+  const res = await handleApi(new Request(`${BASE}/api/version`), e, ctx);
+  expect(res.status).toBe(200);
+  const body = (await res.json()) as { app: string; commit: string; builtAt: string };
+  expect(body.app).toBe('cotly');
+  expect(typeof body.commit).toBe('string');
+  expect(body.commit.length).toBeGreaterThan(0);
+  expect(typeof body.builtAt).toBe('string');
+});
+
 test('Publish Now publishes immediately without waiting for scheduler', async () => {
   const created = await api('/api/posts', 'POST', { baseCaption: 'Verify now', targets: [{ accountId: mockAcc }], mode: 'now' });
   expect(created.status).toBe(201);
