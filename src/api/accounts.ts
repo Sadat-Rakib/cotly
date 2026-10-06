@@ -51,6 +51,36 @@ export async function listAccounts(env: Env, userId: string): Promise<Response> 
 }
 
 export async function removeAccount(env: Env, userId: string, id: string): Promise<Response> {
+  const row = await env.DB
+    .prepare('SELECT id, provider, external_id, display_name, access_token_enc, meta FROM social_accounts WHERE id = ? AND owner_id = ?')
+    .bind(id, userId)
+    .first<{ id: string; provider: Provider; external_id: string; display_name: string; access_token_enc: string; meta: string | null }>();
+  if (!row) throw new HttpError(404, 'That account was already removed.');
+  // Best-effort provider revocation where the adapter supports it; the local
+  // credentials are deleted regardless.
+  try {
+    const adapter = getAdapter(row.provider);
+    const accessToken = await decryptSecret(env.ENCRYPTION_SECRET, row.access_token_enc);
+    let meta: Record<string, unknown> = {};
+    try {
+      meta = JSON.parse(row.meta ?? '{}') as Record<string, unknown>;
+    } catch {
+      meta = {};
+    }
+    if (adapter.revoke) {
+      await adapter.revoke(env, {
+        id: row.id,
+        provider: row.provider,
+        externalId: row.external_id,
+        displayName: row.display_name,
+        accessToken,
+        meta,
+        status: 'connected',
+      });
+    }
+  } catch {
+    // never block the disconnect on a provider-side revocation failure
+  }
   const r = await env.DB.prepare('DELETE FROM social_accounts WHERE id = ? AND owner_id = ?').bind(id, userId).run();
   if (!r.meta.changes) throw new HttpError(404, 'That account was already removed.');
   return json({ ok: true });

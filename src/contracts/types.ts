@@ -124,6 +124,9 @@ export interface PlatformAdapter {
     scopes: string;
   }>;
   refresh?(env: Env, tokens: AccountTokens, account?: SocialAccountRecord): Promise<AccountTokens>;
+  // Best-effort credential revocation at the provider on disconnect. Never
+  // throws to the caller — the local row is removed regardless.
+  revoke?(env: Env, account: SocialAccountRecord): Promise<void>;
   publish(env: Env, input: PublishInput): Promise<PublishOutcome>;
   resolvePending?(env: Env, account: SocialAccountRecord, externalId: string): Promise<PublishOutcome>;
   testConnection?(env: Env, account: SocialAccountRecord): Promise<{ ok: boolean; detail: string }>;

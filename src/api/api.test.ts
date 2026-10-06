@@ -566,6 +566,47 @@ test('oauth start refuses unconfigured providers, callback redirects with error'
   expect(cb.headers.get('location')).toContain('/app/profile?error=');
 });
 
+test('oauth state replay, expiry, wrong provider and tampering are rejected', async () => {
+  // X start builds a state with no network, making the state mechanics testable.
+  const mkState = async (): Promise<string> => {
+    const start = await api('/api/oauth/x/start', 'GET', undefined, { auth: true });
+    expect(start.status).toBe(200);
+    const url = ((await start.json()) as { url: string }).url;
+    return new URL(url).searchParams.get('state') ?? '';
+  };
+
+  // 1) Replay: a consumed state cannot be used again, even with a fresh code.
+  const replayState = await mkState();
+  const first = await api(`/oauth/x/callback?state=${replayState}`, 'GET');
+  expect(first.status).toBe(302);
+  expect(first.headers.get('location')).toContain('/app/profile?error=');
+  const replay = await api(`/oauth/x/callback?code=abc&state=${replayState}`, 'GET');
+  expect(replay.status).toBe(302);
+  expect(replay.headers.get('location')).toContain('expired%20or%20was%20already%20used');
+
+  // 2) Wrong provider: X's state presented to Facebook's callback fails.
+  const wrongProviderState = await mkState();
+  const cross = await api(`/oauth/facebook/callback?code=abc&state=${wrongProviderState}`, 'GET');
+  expect(cross.status).toBe(302);
+  expect(cross.headers.get('location')).toContain('/app/profile?error=');
+
+  // 3) Expired state: force the stored expiry into the past.
+  const expiredState = await mkState();
+  await e.DB.prepare('UPDATE oauth_states SET expires_at = ? WHERE state = ?').bind(nowS() - 30, expiredState).run();
+  const expired = await api(`/oauth/x/callback?code=abc&state=${expiredState}`, 'GET');
+  expect(expired.status).toBe(302);
+  expect(expired.headers.get('location')).toContain('/app/profile?error=');
+
+  // 4) Tampering: an unknown/garbage state is rejected.
+  const tampered = await api('/oauth/x/callback?code=abc&state=tampered-garbage-value', 'GET');
+  expect(tampered.status).toBe(302);
+  expect(tampered.headers.get('location')).toContain('/app/profile?error=');
+
+  // The failed attempts must not have created any account rows.
+  const rows = await e.DB.prepare(`SELECT COUNT(*) AS n FROM social_accounts WHERE provider = 'x'`).first<{ n: number }>();
+  expect(rows?.n).toBe(0);
+});
+
 test('login rate limit trips after 10 bad attempts', async () => {
   const email = 'rl@test.dev';
   for (let i = 0; i < 10; i++) {

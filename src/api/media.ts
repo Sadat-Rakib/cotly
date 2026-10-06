@@ -1,8 +1,17 @@
 import type { Env } from '../contracts/env';
 import { randomId } from '../lib/crypto';
 import { HttpError, json, readJson } from '../lib/http';
-import { mediaSigningReady, mediaStorageReady, objectGet, objectHead, objectPut, presignGet, presignPut } from '../lib/objectstore';
+import { allowAttempt } from '../lib/ratelimit';
+import { mediaSigningReady, mediaStorageReady, objectDelete, objectGet, objectHead, objectPut, presignGet, presignPut } from '../lib/objectstore';
 import { nowS } from './_shared';
+
+// Server-side media validation. The composer also limits per provider, but the
+// storage layer enforces the hard caps so nothing invalid/orphaned is stored.
+const ALLOWED_MEDIA_MIMES = new Set([
+  'image/png', 'image/jpeg', 'image/gif', 'image/webp',
+  'video/mp4', 'video/quicktime', 'video/webm',
+]);
+const MAX_UPLOAD_MB = 1024;
 
 // Strip any path components and unsafe characters; keep a readable basename.
 export function sanitizeFilename(name: string): string {
@@ -30,11 +39,18 @@ export async function retentionHoursFor(env: Env, userId: string): Promise<numbe
   return 168; // 7 days
 }
 
-export async function uploadUrl(req: Request, env: Env): Promise<Response> {
+export async function uploadUrl(req: Request, env: Env, userId: string): Promise<Response> {
   if (!mediaStorageReady(env)) {
     throw new HttpError(503, 'Media storage is not configured yet. Text-only posts still work.');
   }
-  const body = await readJson(req);
+  if (!(await allowAttempt(env, `media:${userId}`, 60, 15 * 60))) {
+    throw new HttpError(429, 'Too many uploads in a short time. Please wait a few minutes and try again.');
+  }
+  const body = (await readJson(req)) ?? {};
+  const mime = String(body.mime ?? '').split(';')[0]!.trim().toLowerCase();
+  if (!ALLOWED_MEDIA_MIMES.has(mime)) {
+    throw new HttpError(400, 'That file type is not supported. Use PNG, JPEG, GIF, WebP, MP4, MOV or WebM.');
+  }
   const filename = sanitizeFilename(String(body.filename ?? ''));
   const key = `media/${randomId(8)}/${filename}`;
   const mediaId = `med_${randomId(8)}`;
@@ -59,15 +75,24 @@ export async function relayUpload(req: Request, env: Env, _userId: string): Prom
 }
 
 export async function confirm(req: Request, env: Env, userId: string): Promise<Response> {
-  const body = await readJson(req);
+  const body = (await readJson(req)) ?? {};
   const r2Key = String(body.r2Key ?? '');
   if (!isValidMediaKey(r2Key)) throw new HttpError(400, 'That upload reference is invalid.');
   if (!mediaStorageReady(env)) throw new HttpError(503, 'Media storage is not enabled on this deployment yet. Text-only posts still work.');
   const obj = await objectHead(env, r2Key);
   if (!obj.exists) throw new HttpError(400, 'That upload did not complete. Upload the file again and retry.');
+  const mime = (String(body.mime ?? '') || obj.contentType || 'application/octet-stream').split(';')[0]!.trim().toLowerCase();
+  if (!ALLOWED_MEDIA_MIMES.has(mime)) {
+    // Reject and remove the stored object so rejected uploads cannot orphan.
+    await objectDelete(env, r2Key);
+    throw new HttpError(400, 'That file type is not supported. Use PNG, JPEG, GIF, WebP, MP4, MOV or WebM.');
+  }
+  const size = Math.max(Number(body.size) > 0 ? Number(body.size) : 0, obj.size ?? 0);
+  if (size > MAX_UPLOAD_MB * 1024 * 1024) {
+    await objectDelete(env, r2Key);
+    throw new HttpError(413, `That file is too large. Cotly accepts media up to ${MAX_UPLOAD_MB} GB.`);
+  }
   const id = typeof body.mediaId === 'string' && body.mediaId ? body.mediaId : `med_${randomId(8)}`;
-  const mime = String(body.mime ?? '') || obj.contentType || 'application/octet-stream';
-  const size = Number(body.size) > 0 ? Number(body.size) : obj.size ?? 0;
   const filename = sanitizeFilename(String(body.filename ?? ''));
   const now = nowS();
   const retention = await retentionHoursFor(env, userId);

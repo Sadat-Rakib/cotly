@@ -161,6 +161,19 @@ export class XAdapter implements PlatformAdapter {
     };
   }
 
+  // Best-effort revocation of the access + refresh tokens at X.
+  async revoke(env: Env, account: SocialAccountRecord): Promise<void> {
+    try {
+      await httpJson('https://api.x.com/2/oauth2/revoke', {
+        method: 'POST',
+        headers: { authorization: basicAuth(env), 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ token: account.accessToken }),
+      });
+    } catch {
+      // revocation is best-effort; Cotly deletes its credentials regardless
+    }
+  }
+
   // Free read — identifies the account without spending from the post budget.
   async testConnection(env: Env, account: SocialAccountRecord): Promise<TestConnectionResult> {
     const secrets = secretsOf(env, account.accessToken);

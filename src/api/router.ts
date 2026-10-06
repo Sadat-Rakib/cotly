@@ -66,7 +66,7 @@ async function route(req: Request, env: Env): Promise<Response> {
     return accounts.oauthStart(req, env, seg[2] as string);
   }
 
-  if (method === 'POST' && path === '/api/media/upload-url') return media.uploadUrl(req, env);
+  if (method === 'POST' && path === '/api/media/upload-url') return media.uploadUrl(req, env, userId);
   // Worker-relayed upload (binding-only stores) and session-authenticated read.
   if (method === 'PUT' && seg.length === 4 && seg[1] === 'media' && seg[2] === 'upload') {
     return media.relayUpload(req, env, userId);

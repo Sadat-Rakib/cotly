@@ -6,6 +6,7 @@ import { HttpError, json, readJson } from '../lib/http';
 import { requireSession } from '../lib/sessions';
 import { isValidTimezone, nowS, PROVIDER_LABEL } from './_shared';
 import { runSchedulerTick } from '../engine/cron';
+import { allowAttempt } from '../lib/ratelimit';
 
 interface FieldError {
   field: string;
@@ -126,6 +127,11 @@ function parseTargets(raw: unknown): TargetInput[] {
 }
 
 export async function create(req: Request, env: Env, userId: string): Promise<Response> {
+  // Abuse guard: bounded creation rate and a cap on pending scheduled posts
+  // per user, so one account cannot flood the scheduler.
+  if (!(await allowAttempt(env, `posts:${userId}`, 30, 15 * 60))) {
+    throw new HttpError(429, 'You are creating posts too quickly. Please wait a few minutes.');
+  }
   const body = await readJson(req);
   const baseCaption = isStr(body.baseCaption) ? body.baseCaption : '';
   const mediaIds = Array.isArray(body.mediaIds) ? (body.mediaIds.filter(isStr) as string[]) : [];
@@ -165,6 +171,13 @@ export async function create(req: Request, env: Env, userId: string): Promise<Re
     )
     .bind(postId, userId, baseCaption, scheduledAt, timezone, mode === 'now' ? 'now' : 'scheduled', media.length, now, now)
     .run();
+  const pending = await env.DB
+    .prepare(`SELECT COUNT(*) AS n FROM posts WHERE owner_id = ? AND status = 'scheduled'`)
+    .bind(userId)
+    .first<{ n: number }>();
+  if ((pending?.n ?? 0) > 100) {
+    throw new HttpError(429, 'You have too many scheduled posts waiting. Publish or cancel some before scheduling more.');
+  }
   for (const [i, m] of media.entries()) {
     await env.DB.prepare('INSERT INTO post_media (post_id, media_id, position) VALUES (?,?,?)').bind(postId, m.id, i).run();
   }

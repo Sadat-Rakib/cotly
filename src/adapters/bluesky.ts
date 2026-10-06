@@ -424,6 +424,25 @@ export class BlueskyAdapter implements PlatformAdapter {
   }
 
   // Report-only probe: a successful refresh here is NOT persisted — engine/API still owns tokens.
+  // Revoke the issued tokens at the authorization server (best-effort).
+  async revoke(env: Env, account: SocialAccountRecord): Promise<void> {
+    try {
+      const assertion = await clientAssertion(env, AUTH_SERVER);
+      await httpJson(`${AUTH_SERVER}/oauth/revoke`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          token: account.accessToken,
+          client_id: clientId(env),
+          client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+          client_assertion: assertion,
+        }),
+      });
+    } catch {
+      // revocation is best-effort; Cotly deletes its credentials regardless
+    }
+  }
+
   async testConnection(env: Env, account: SocialAccountRecord): Promise<TestConnectionResult> {
     const secrets = secretsOf(account.accessToken, account.refreshToken);
     try {
