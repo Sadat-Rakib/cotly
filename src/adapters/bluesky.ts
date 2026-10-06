@@ -259,7 +259,8 @@ async function dpopXrpc(
   const send = async (nonce?: string): Promise<Response> => {
     // RFC 9449: the DPoP htu claim is the request URI WITHOUT query/fragment —
     // the PDS rejects proofs whose htu carries the query string.
-    const proof = await dpopProof(jwk, method, url.split('?')[0], { nonce, ath });
+    const htu = url.split('?')[0] ?? url;
+    const proof = await dpopProof(jwk, method, htu, { nonce, ath });
     const headers: Record<string, string> = {
       authorization: `Bearer ${accessToken}`,
       dpop: proof,
