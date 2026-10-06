@@ -367,7 +367,8 @@ export class BlueskyAdapter implements PlatformAdapter {
       }
     }
     if (!par.ok) {
-      throw new Error(`Bluesky rejected the connection start (HTTP ${par.status}). Try again in a moment.`);
+      const body = (await par.text().catch(() => '')).slice(0, 200);
+      throw new Error(`Bluesky rejected the connection start (HTTP ${par.status}${body ? `: ${body}` : ''}). Try again in a moment.`);
     }
     const parData = (await par.json().catch(() => ({}))) as { request_uri?: string };
     if (!parData.request_uri) throw new Error('Bluesky did not return an authorization request. Try again.');

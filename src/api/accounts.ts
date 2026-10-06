@@ -224,7 +224,10 @@ export async function blueskyOAuthDocument(req: Request, env: Env, doc: string):
   return json({
     client_id: `${base}/oauth/bluesky/client-metadata.json`,
     client_name: 'Cotly',
-    client_uri: env.APP_URL,
+    // ATProto auth servers require every metadata URL (client_uri included)
+    // to share the client_id's origin — APP_URL (the frontend domain) is
+    // rejected with invalid_client_metadata.
+    client_uri: base,
     logo_uri: `${base}/brand/cotly-avatar-512.png`,
     redirect_uris: [`${base}/oauth/bluesky/callback`],
     scope: 'atproto transition:generic',
