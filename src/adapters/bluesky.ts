@@ -494,6 +494,11 @@ export class BlueskyAdapter implements PlatformAdapter {
   async testConnection(env: Env, account: SocialAccountRecord): Promise<TestConnectionResult> {
     const secrets = secretsOf(account.accessToken, account.refreshToken);
     try {
+      // Rows connected before the ATProto OAuth rework carry no DPoP key, so
+      // no XRPC call can be signed for them — say so instead of a generic crash.
+      if (typeof account.meta.dpopKeyEnc !== 'string' || !account.meta.dpopKeyEnc) {
+        return { ok: false, detail: 'This Bluesky connection predates Cotly’s current sign-in and cannot be renewed. Reconnect Bluesky.' };
+      }
       const pds = typeof account.meta.pdsUrl === 'string' ? account.meta.pdsUrl : AUTH_SERVER;
       const resp = await dpopXrpc(env, account.meta, account.accessToken, 'GET', `${pds}/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(account.externalId)}`);
       if (resp.ok) {
@@ -531,6 +536,10 @@ export class BlueskyAdapter implements PlatformAdapter {
         throw fail(secrets, 'TOO_MANY_IMAGES', `Bluesky posts support at most ${MAX_IMAGES} images. Remove the extras and retry.`);
       }
       const did = input.account.externalId;
+      // A pre-OAuth row has no DPoP key: sign-in is impossible, only reconnect fixes it.
+      if (typeof input.account.meta.dpopKeyEnc !== 'string' || !input.account.meta.dpopKeyEnc) {
+        throw needsReconnect(secrets, 'This Bluesky connection predates Cotly’s current sign-in. Reconnect Bluesky and retry.');
+      }
       const record: Record<string, unknown> = {
         $type: 'app.bsky.feed.post',
         text: input.caption,
