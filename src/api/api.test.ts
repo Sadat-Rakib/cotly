@@ -1,4 +1,4 @@
-import { beforeAll, expect, test } from 'vitest';
+import { beforeAll, expect, test, vi } from 'vitest';
 import { env } from 'cloudflare:test';
 import type { Env } from '../contracts/env';
 import { encryptSecret, randomId } from '../lib/crypto';
@@ -216,6 +216,39 @@ test('multi-user isolation: a second user sees none of the owner data', async ()
   const bQueue = (await (await api('/api/posts?view=queue', 'GET', undefined, b)).json()) as Array<{ id: string }>;
   const bPublished = (await (await api('/api/posts?view=published', 'GET', undefined, b)).json()) as Array<{ id: string }>;
   expect([...bQueue, ...bPublished].some((p) => p.id === postId)).toBe(false);
+
+  // Aggressive leak-hunt: B cannot publish-now, re-publish, or target the
+  // owner's post/account through any mutation route.
+  expect((await api(`/api/posts/${postId}/publish-now`, 'POST', undefined, { ...b, csrf: true })).status).toBe(404);
+  expect((await api(`/api/posts/${postId}/duplicate`, 'POST', undefined, { ...b, csrf: true })).status).toBe(404);
+  const foreignTarget = await api('/api/posts', 'POST', {
+    baseCaption: 'trying to route through the owner account',
+    mediaIds: [],
+    targets: [{ accountId: threadsAccId }],
+    mode: 'now',
+  }, { ...b, csrf: true });
+  // 422: the foreign accountId fails owner-scoped validation.
+  expect(foreignTarget.status).toBe(422);
+  const foreignBody = (await foreignTarget.json()) as { errors?: Array<{ message: string }> };
+  expect(foreignBody.errors?.[0]?.message).toMatch(/no longer exists/i);
+
+  // B's diagnostics expose none of the owner's attempts, queue counts or media.
+  const bDiag = (await (await api('/api/diagnostics', 'GET', undefined, b)).json()) as {
+    dueCount: number; activeCount: number; failedCount: number; recentAttempts: unknown[];
+    providers: Record<string, string>; media: { objectCount: number };
+  };
+  expect(bDiag.dueCount).toBe(0);
+  expect(bDiag.activeCount).toBe(0);
+  expect(bDiag.failedCount).toBe(0);
+  expect(bDiag.recentAttempts).toHaveLength(0);
+  expect(Object.keys(bDiag.providers ?? {})).toHaveLength(0);
+  expect(bDiag.media.objectCount).toBe(0);
+
+  // The owner's diagnostics DO show their own activity (scoping works both ways).
+  const oDiag = (await (await api('/api/diagnostics', 'GET', undefined, { auth: true })).json()) as {
+    media: { objectCount: number };
+  };
+  expect(oDiag.media.objectCount).toBe(0); // owner has no uploads in this test
 
   // Settings are per-user too: B changes their retention and timezone without
   // touching the owner's preferences.
@@ -512,9 +545,21 @@ test('oauth start refuses unconfigured providers, callback redirects with error'
   expect(li.status).toBe(400);
   expect(((await li.json()) as { error: string }).error).toMatch(/LinkedIn/i);
 
+  // Bluesky now uses atproto OAuth — stub the PAR endpoint so the start
+  // returns a real authorization URL without touching the network.
+  const realFetch = globalThis.fetch;
+  vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).startsWith('https://bsky.social/oauth/par')) {
+      return new Response(JSON.stringify({ request_uri: 'urn:bsky:par:test' }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    return realFetch(input as RequestInfo, init);
+  });
   const bs = await api('/api/oauth/bluesky/start', 'GET', undefined, { auth: true });
-  expect(bs.status).toBe(400);
-  expect(((await bs.json()) as { error: string }).error).toMatch(/direct sign-in/i);
+  expect(bs.status).toBe(200);
+  const bsBody = (await bs.json()) as { url: string };
+  expect(bsBody.url).toContain('https://bsky.social/oauth/authorize');
+  expect(bsBody.url).toContain('request_uri=');
+  vi.unstubAllGlobals();
 
   const cb = await api('/oauth/facebook/callback?code=abc&state=nope', 'GET');
   expect(cb.status).toBe(302);

@@ -5,6 +5,7 @@ import { HttpError, json, readJson } from '../lib/http';
 import { parseCookies, requireSession } from '../lib/sessions';
 import { nowS, PROVIDER_LABEL } from './_shared';
 import { getAdapter } from '../adapters/registry';
+import { getPublicJwks } from '../adapters/bluesky';
 import { parseSignedRequest } from '../adapters/_shared';
 
 interface AccountView {
@@ -179,25 +180,30 @@ async function upsertAccount(
   return viewOf(row);
 }
 
-export async function connectBluesky(req: Request, env: Env): Promise<Response> {
-  const body = await readJson(req);
-  let adapter: PlatformAdapter;
-  try {
-    adapter = getAdapter('bluesky');
-  } catch {
-    throw new HttpError(400, 'Bluesky adapter not available yet');
+// GET /oauth/bluesky/client-metadata.json and /oauth/bluesky/jwks.json — the
+// AT Protocol confidential-client identity of this deployment. The metadata
+// URL is the client_id, so both documents must be served without redirects.
+export async function blueskyOAuthDocument(req: Request, env: Env, doc: string): Promise<Response> {
+  const base = env.APP_URL;
+  if (doc === 'jwks.json') {
+    const jwks = await getPublicJwks(env);
+    return json(jwks);
   }
-  if (!adapter.connectDirect) throw new HttpError(400, 'Bluesky adapter not available yet');
-  let result: Awaited<ReturnType<NonNullable<PlatformAdapter['connectDirect']>>>;
-  try {
-    result = await adapter.connectDirect(env, { handle: String(body.handle ?? ''), appPassword: String(body.appPassword ?? '') });
-  } catch (err) {
-    // Adapter messages are human-readable and secret-free by contract.
-    throw new HttpError(400, err instanceof Error && err.message ? err.message : 'Connecting Bluesky failed. Try again.');
-  }
-  const userId = await requireSession(env, req);
-  const saved = await upsertAccount(env, userId, 'bluesky', result.account, result.tokens, result.scopes);
-  return json(saved, 201);
+  return json({
+    client_id: `${base}/oauth/bluesky/client-metadata.json`,
+    client_name: 'Cotly',
+    client_uri: base,
+    logo_uri: `${base}/brand/cotly-avatar-512.png`,
+    redirect_uris: [`${base}/oauth/bluesky/callback`],
+    scope: 'atproto transition:generic',
+    grant_types: ['authorization_code', 'refresh_token'],
+    response_types: ['code'],
+    token_endpoint_auth_method: 'private_key_jwt',
+    token_endpoint_auth_signing_alg: 'ES256',
+    application_type: 'web',
+    dpop_bound_access_tokens: true,
+    jwks_uri: `${base}/oauth/bluesky/jwks.json`,
+  });
 }
 
 // POST /api/accounts/instagram/token — connect Instagram with a user-supplied

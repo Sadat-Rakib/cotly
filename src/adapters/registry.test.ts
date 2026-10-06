@@ -62,7 +62,9 @@ describe('adapter registry', () => {
     expect(oauthConfigured('facebook', {})).toBe(false);
     expect(oauthConfigured('threads', { THREADS_CLIENT_ID: 'id' })).toBe(true);
     expect(oauthConfigured('linkedin', { LINKEDIN_CLIENT_ID: 'id' })).toBe(true);
-    expect(oauthConfigured('bluesky', {})).toBe(false); // connectDirect, no OAuth flow
+    // AT Protocol OAuth: the Bluesky client identity derives from APP_URL,
+    // so it is always configured.
+    expect(oauthConfigured('bluesky', {})).toBe(true);
     expect(oauthConfigured('mock', {})).toBe(false);
     expect(oauthConfigured('assisted', {})).toBe(false);
   });

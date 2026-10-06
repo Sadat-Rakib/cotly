@@ -25,6 +25,11 @@ async function route(req: Request, env: Env): Promise<Response> {
 
   // /oauth/:provider/callback lives outside /api and is intentionally sessionless.
   if (seg[0] === 'oauth') {
+    // AT Protocol client metadata + JWKS: publicly fetchable by Bluesky auth
+    // servers; the client_id IS the metadata URL, so no redirects allowed.
+    if (method === 'GET' && seg.length === 3 && seg[1] === 'bluesky' && (seg[2] === 'client-metadata.json' || seg[2] === 'jwks.json')) {
+      return accounts.blueskyOAuthDocument(req, env, seg[2]);
+    }
     if (method === 'GET' && seg.length === 3 && seg[1] !== undefined && seg[2] === 'callback') {
       return accounts.oauthCallback(req, env, seg[1]);
     }
@@ -52,7 +57,6 @@ async function route(req: Request, env: Env): Promise<Response> {
   if (method === 'POST' && seg.length === 4 && seg[1] === 'accounts' && seg[3] === 'test') {
     return accounts.testAccount(env, userId, seg[2] as string);
   }
-  if (method === 'POST' && path === '/api/accounts/bluesky') return accounts.connectBluesky(req, env);
   if (method === 'POST' && path === '/api/accounts/instagram/token') return accounts.connectInstagramToken(req, env);
   if (method === 'POST' && path === '/api/accounts/mock') return accounts.connectMock(req, env);
   if (method === 'GET' && path === '/api/accounts/facebook/pages') return accounts.listFacebookPages(req, env);
@@ -101,7 +105,7 @@ async function route(req: Request, env: Env): Promise<Response> {
 
   if (method === 'GET' && path === '/api/settings') return settings.getSettings(env, userId);
   if (method === 'PUT' && path === '/api/settings') return settings.putSettings(req, env, userId);
-  if (method === 'GET' && path === '/api/diagnostics') return settings.getDiagnostics(env);
+  if (method === 'GET' && path === '/api/diagnostics') return settings.getDiagnostics(env, userId);
 
   throw new HttpError(404, 'Not found');
 }

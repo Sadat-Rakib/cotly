@@ -286,7 +286,7 @@ export async function publishClaimedTarget(env: Env, t: ClaimedTarget, now: numb
 
   if (acc.token_expires_at !== null && acc.token_expires_at <= now && adapter.refresh) {
     try {
-      tokens = await adapter.refresh(env, tokens);
+      tokens = await adapter.refresh(env, tokens, toAccountRecord(acc, tokens));
       const enc = await encryptSecret(env.ENCRYPTION_SECRET, tokens.accessToken);
       const encRefresh = tokens.refreshToken ? await encryptSecret(env.ENCRYPTION_SECRET, tokens.refreshToken) : null;
       await env.DB

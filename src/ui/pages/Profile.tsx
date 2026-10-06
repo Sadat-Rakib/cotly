@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { ApiError, api, providerLabel, type Account, type Me, type Provider, type Settings as SettingsShape } from '../api';
 import { StatusBadge } from '../components/Badge';
+import { CollapsibleCard } from '../components/CollapsibleCard';
 import { TimezoneSelect } from '../components/TimezoneSelect';
 import { useToast } from '../components/Toasts';
 import { relTime } from '../time';
@@ -22,32 +23,32 @@ const CARDS: ProviderCard[] = [
   {
     provider: 'threads',
     label: 'Threads',
-    blurb: 'Publish to your Threads account. Posts go live after a short processing step.',
+    blurb: 'Post to your Threads account.',
     flow: 'oauth',
   },
   {
     provider: 'x',
     label: 'X',
-    blurb: 'Post to your X account. Publishing is pay-per-post and guarded by a monthly budget.',
+    blurb: 'Post to your X account.',
     flow: 'oauth',
   },
   {
     provider: 'facebook',
     label: 'Facebook Pages',
-    blurb: 'Publish to a Page you manage. Cotly never posts to personal profiles.',
+    blurb: 'Publish to your Facebook Page.',
     flow: 'oauth',
   },
   {
     provider: 'instagram',
     label: 'Instagram',
-    blurb: 'Publish to your Business or Creator account. Image posts only for now.',
+    blurb: 'Publish to your Business or Creator account.',
     flow: 'oauth',
   },
   {
     provider: 'bluesky',
     label: 'Bluesky',
-    blurb: 'Sign in with your handle and an app password.',
-    flow: 'form',
+    blurb: 'Post to your Bluesky account.',
+    flow: 'oauth',
   },
   {
     provider: 'mock',
@@ -94,8 +95,6 @@ export function ProfilePage({ me, onLogout }: Props) {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [accountsLoading, setAccountsLoading] = useState(true);
   const [busy, setBusy] = useState<Provider | null>(null);
-  const [bskyHandle, setBskyHandle] = useState('');
-  const [bskyPassword, setBskyPassword] = useState('');
   const [mockName, setMockName] = useState('');
   const [pages, setPages] = useState<PageOption[] | null>(null);
   const [pageBusy, setPageBusy] = useState<string | null>(null);
@@ -158,21 +157,6 @@ export function ProfilePage({ me, onLogout }: Props) {
       window.location.href = url;
     } catch (e) {
       toast('err', e instanceof ApiError && e.status === 400 ? `${card.label} is not configured yet on this deployment.` : msg(e));
-      setBusy(null);
-    }
-  };
-
-  const connectBsky = async () => {
-    setBusy('bluesky');
-    try {
-      await api('/api/accounts/bluesky', { method: 'POST', body: { handle: bskyHandle, appPassword: bskyPassword } });
-      toast('ok', 'Bluesky connected.');
-      setBskyHandle('');
-      setBskyPassword('');
-      await loadAccounts();
-    } catch (e) {
-      toast('err', msg(e));
-    } finally {
       setBusy(null);
     }
   };
@@ -289,8 +273,7 @@ export function ProfilePage({ me, onLogout }: Props) {
       <p className="hint">Your account, connections, and preferences — all in one place.</p>
 
       {/* ---------- User information ---------- */}
-      <section className="card">
-        <h2>Account</h2>
+      <CollapsibleCard title="Account">
         <div className="profile-user">
           <span className="avatar avatar-fallback profile-avatar" aria-hidden="true">
             {me.email.charAt(0).toUpperCase()}
@@ -300,11 +283,10 @@ export function ProfilePage({ me, onLogout }: Props) {
             <span className="account-verified">Timezone: {me.timezone}</span>
           </div>
         </div>
-      </section>
+      </CollapsibleCard>
 
       {/* ---------- Connected social accounts ---------- */}
-      <section className="card">
-        <h2>Connected accounts</h2>
+      <CollapsibleCard title="Connected accounts" defaultOpen>
         <p className="hint">
           Connect the places you post to. Tokens are encrypted at rest and never shown here.
         </p>
@@ -394,37 +376,6 @@ export function ProfilePage({ me, onLogout }: Props) {
                 </>
               )}
 
-              {card.provider === 'bluesky' && list.length === 0 && (
-                <>
-                  <form className="inline-form" onSubmit={(e) => { e.preventDefault(); void connectBsky(); }}>
-                    <input
-                      className="input"
-                      placeholder="handle.bsky.social"
-                      value={bskyHandle}
-                      onChange={(e) => setBskyHandle(e.target.value)}
-                      required
-                      aria-label="Bluesky handle"
-                    />
-                    <input
-                      className="input"
-                      type="password"
-                      placeholder="App password"
-                      value={bskyPassword}
-                      onChange={(e) => setBskyPassword(e.target.value)}
-                      required
-                      aria-label="Bluesky app password"
-                    />
-                    <button className="btn btn-primary btn-sm" type="submit" disabled={busy === 'bluesky'}>
-                      {busy === 'bluesky' ? 'Connecting…' : 'Connect'}
-                    </button>
-                  </form>
-                  <p className="hint">
-                    Create an app password at bsky.app/settings/app-passwords. It is shown once — paste
-                    it here and it is encrypted immediately.
-                  </p>
-                </>
-              )}
-
               {card.flow === 'dev' && list.length === 0 && (
                 <form className="inline-form" onSubmit={(e) => { e.preventDefault(); void connectMock(); }}>
                   <input
@@ -493,12 +444,11 @@ export function ProfilePage({ me, onLogout }: Props) {
             </div>
           );
         })}
-      </section>
+      </CollapsibleCard>
 
       {/* ---------- Preferences ---------- */}
-      <form className="card" onSubmit={saveSettings}>
-        <h2>Preferences</h2>
-
+      <CollapsibleCard title="Preferences">
+        <form onSubmit={saveSettings}>
         <div className="field">
           <span className="label">Timezone (used for smart scheduling)</span>
           <TimezoneSelect value={cur.timezone} onChange={(tz) => set({ timezone: tz })} />
@@ -552,11 +502,11 @@ export function ProfilePage({ me, onLogout }: Props) {
         <button className="btn btn-primary" type="submit" disabled={settingsBusy || !s}>
           {settingsBusy ? 'Saving…' : 'Save preferences'}
         </button>
-      </form>
+        </form>
+      </CollapsibleCard>
 
       {/* ---------- Storage diagnostics ---------- */}
-      <section className="card">
-        <h2>Media storage</h2>
+      <CollapsibleCard title="Media storage">
         {!media ? (
           <p className="hint">Storage diagnostics load with the next scheduler tick.</p>
         ) : (
@@ -586,15 +536,14 @@ export function ProfilePage({ me, onLogout }: Props) {
             </p>
           </>
         )}
-      </section>
+      </CollapsibleCard>
 
       {/* ---------- Session ---------- */}
-      <section className="card">
-        <h2>Session</h2>
+      <CollapsibleCard title="Session" defaultOpen>
         <div className="settings-links">
           <button type="button" className="btn btn-ghost" onClick={onLogout}>Log out ({me.email})</button>
         </div>
-      </section>
+      </CollapsibleCard>
     </div>
   );
 }

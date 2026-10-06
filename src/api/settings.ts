@@ -78,27 +78,33 @@ export async function putSettings(req: Request, env: Env, userId: string): Promi
   return getSettings(env, userId);
 }
 
-export async function getDiagnostics(env: Env): Promise<Response> {
+export async function getDiagnostics(env: Env, userId: string): Promise<Response> {
   const now = nowS();
   const lastTick = await env.DB.prepare(`SELECT value FROM settings WHERE key = 'last_tick_at'`).first<{ value: string }>();
   const lastTickAt = Number(lastTick?.value) || null;
-  const count = async (sql: string): Promise<number> => (await env.DB.prepare(sql).first<{ n: number }>())?.n ?? 0;
-  const dueCount = await count(`SELECT COUNT(*) AS n FROM post_targets WHERE status = 'scheduled' AND scheduled_at <= ${now}`);
-  const activeCount = await count(`SELECT COUNT(*) AS n FROM post_targets WHERE status IN ('claimed','publishing')`);
-  const failedCount = await count(`SELECT COUNT(*) AS n FROM post_targets WHERE status = 'failed'`);
-  const needsReconnectCount = await count(`SELECT COUNT(*) AS n FROM post_targets WHERE status = 'needs_reconnect'`);
+  // Everything here is scoped to the authenticated user — queue counts,
+  // attempts and errors of other users must never be visible cross-account.
+  const count = async (sql: string, ...binds: unknown[]): Promise<number> => (await env.DB.prepare(sql).bind(...binds).first<{ n: number }>())?.n ?? 0;
+  const dueCount = await count(`SELECT COUNT(*) AS n FROM post_targets t JOIN posts p ON p.id = t.post_id WHERE t.status = 'scheduled' AND t.scheduled_at <= ${now} AND p.owner_id = ?`, userId);
+  const activeCount = await count(`SELECT COUNT(*) AS n FROM post_targets t JOIN posts p ON p.id = t.post_id WHERE t.status IN ('claimed','publishing') AND p.owner_id = ?`, userId);
+  const failedCount = await count(`SELECT COUNT(*) AS n FROM post_targets t JOIN posts p ON p.id = t.post_id WHERE t.status = 'failed' AND p.owner_id = ?`, userId);
+  const needsReconnectCount = await count(`SELECT COUNT(*) AS n FROM post_targets t JOIN posts p ON p.id = t.post_id WHERE t.status = 'needs_reconnect' AND p.owner_id = ?`, userId);
   const attempts = await env.DB
     .prepare(
       `SELECT pa.post_target_id AS targetId, t.platform AS provider, pa.attempt_number AS attemptNumber, pa.started_at AS startedAt, pa.result, pa.error_message AS errorMessage
-       FROM publishing_attempts pa JOIN post_targets t ON t.id = pa.post_target_id
+       FROM publishing_attempts pa JOIN post_targets t ON t.id = pa.post_target_id JOIN posts p ON p.id = t.post_id
+       WHERE p.owner_id = ?
        ORDER BY pa.started_at DESC, pa.rowid DESC LIMIT 20`,
     )
+    .bind(userId)
     .all<{ targetId: string; provider: string; attemptNumber: number; startedAt: number; result: string; errorMessage: string | null }>();
   const provRows = await env.DB
     .prepare(
-      `SELECT t.platform AS provider, pa.result FROM publishing_attempts pa JOIN post_targets t ON t.id = pa.post_target_id
+      `SELECT t.platform AS provider, pa.result FROM publishing_attempts pa JOIN post_targets t ON t.id = pa.post_target_id JOIN posts p ON p.id = t.post_id
+       WHERE p.owner_id = ?
        ORDER BY pa.started_at DESC, pa.rowid DESC LIMIT 200`,
     )
+    .bind(userId)
     .all<{ provider: string; result: string }>();
   const providers: Record<string, string> = {};
   for (const r of provRows.results ?? []) {
@@ -120,7 +126,8 @@ export async function getDiagnostics(env: Env): Promise<Response> {
   // Storage diagnostics: never exceed storage silently. The cleaned total is a
   // cumulative counter maintained by cleanup.ts in the settings KV.
   const mediaStats = await env.DB
-    .prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS bytes FROM media`)
+    .prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS bytes FROM media WHERE owner_id = ?`)
+    .bind(userId)
     .first<{ n: number; bytes: number }>();
   const cleanedRow = await env.DB.prepare(`SELECT value FROM settings WHERE key = 'media_cleaned_total'`).first<{ value: string }>();
   // Worker→store connectivity probe: HEAD a well-known key and report the raw
