@@ -257,7 +257,9 @@ async function dpopXrpc(
   const jwk = JSON.parse(await decryptSecret(env.ENCRYPTION_SECRET, dpopEnc)) as DpopPrivateJwk;
   const ath = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(accessToken)));
   const send = async (nonce?: string): Promise<Response> => {
-    const proof = await dpopProof(jwk, method, url, { nonce, ath });
+    // RFC 9449: the DPoP htu claim is the request URI WITHOUT query/fragment —
+    // the PDS rejects proofs whose htu carries the query string.
+    const proof = await dpopProof(jwk, method, url.split('?')[0], { nonce, ath });
     const headers: Record<string, string> = {
       authorization: `Bearer ${accessToken}`,
       dpop: proof,
