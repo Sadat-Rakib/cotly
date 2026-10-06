@@ -254,15 +254,7 @@ async function dpopXrpc(
 ): Promise<ProviderResponse> {
   const dpopEnc = typeof meta.dpopKeyEnc === 'string' ? meta.dpopKeyEnc : '';
   if (!dpopEnc) throw new Error('missing dpop key');
-  // TEMP DIAGNOSTIC: decoded claims only — never the token value.
-  try {
-    const payload = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(accessToken.split('.')[1]!.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0))));
-    console.error('[bluesky-dbg] token claims:', JSON.stringify({
-      iss: payload.iss, sub: payload.sub, aud: payload.aud, scope: payload.scope,
-      exp_s: payload.exp ? Math.floor((payload.exp - Date.now() / 1000) / 60) : null,
-      cnf_kty: payload.cnf?.jwk?.kty, cnf_crv: payload.cnf?.jwk?.crv,
-    }));
-  } catch { console.error('[bluesky-dbg] payload decode failed'); }
+
   const jwk = JSON.parse(await decryptSecret(env.ENCRYPTION_SECRET, dpopEnc)) as DpopPrivateJwk;
   const ath = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(accessToken)));
   const send = async (nonce?: string): Promise<Response> => {
@@ -271,7 +263,10 @@ async function dpopXrpc(
     const htu = url.split('?')[0] ?? url;
     const proof = await dpopProof(jwk, method, htu, { nonce, ath });
     const headers: Record<string, string> = {
-      authorization: `Bearer ${accessToken}`,
+      // RFC 9449: DPoP-bound tokens use the DPoP authorization scheme — the
+      // atproto resource servers route Bearer requests to their legacy
+      // app-password verifier, which rejects OAuth tokens.
+      authorization: `DPoP ${accessToken}`,
       dpop: proof,
       ...(init.contentType ? { 'content-type': init.contentType } : {}),
     };
