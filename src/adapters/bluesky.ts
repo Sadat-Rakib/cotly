@@ -150,18 +150,25 @@ async function dpopProof(jwk: DpopPrivateJwk, htm: string, htu: string, opts: { 
   return encodeJwt(jwk, payload, 'dpop+jwt');
 }
 
-// Cached DPoP nonces per authorization server (bsky.social rotates them and
-// rejects proofs with a stale nonce by returning the next one — retry once).
-async function getNonce(env: Env): Promise<string | undefined> {
-  const row = await env.DB.prepare(`SELECT value FROM settings WHERE key = 'bluesky_dpop_nonce'`).first<{ value: string }>();
+// Cached DPoP nonces, one slot PER SERVER: bsky.social (auth server) and the
+// account's PDS rotate nonces independently, so a shared slot would make each
+// server's nonce clobber the other's and force a handshake on every call.
+// Servers reject a stale nonce by returning the next one — retry once.
+function nonceKey(url: string): string {
+  const origin = new URL(url).origin;
+  return `bluesky_dpop_nonce:${origin}`;
+}
+
+async function getNonce(env: Env, url: string): Promise<string | undefined> {
+  const row = await env.DB.prepare(`SELECT value FROM settings WHERE key = ?`).bind(nonceKey(url)).first<{ value: string }>();
   return row?.value || undefined;
 }
 
-async function setNonce(env: Env, nonce: string | null): Promise<void> {
+async function setNonce(env: Env, url: string, nonce: string | null): Promise<void> {
   if (!nonce) return;
   await env.DB
-    .prepare(`INSERT INTO settings (key, value) VALUES ('bluesky_dpop_nonce', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
-    .bind(nonce)
+    .prepare(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+    .bind(nonceKey(url), nonce)
     .run();
 }
 
@@ -179,13 +186,13 @@ async function oauthTokenRequest(env: Env, dpopJwk: DpopPrivateJwk, body: URLSea
       headers: { 'content-type': 'application/x-www-form-urlencoded', dpop: await dpopProof(dpopJwk, 'POST', tokenUrl, { nonce }) },
       body,
     });
-  let res = await send(await getNonce(env));
+  let res = await send(await getNonce(env, tokenUrl));
   const fresh = res.headers.get('dpop-nonce');
-  if (fresh) await setNonce(env, fresh);
+  if (fresh) await setNonce(env, tokenUrl, fresh);
   if (isNonceChallenge(res) && fresh) {
     res = await send(fresh);
     const retryNonce = res.headers.get('dpop-nonce');
-    if (retryNonce) await setNonce(env, retryNonce);
+    if (retryNonce) await setNonce(env, tokenUrl, retryNonce);
   }
   return res;
 }
@@ -266,15 +273,15 @@ async function dpopXrpc(
       throw new OutcomeError({ kind: 'failed', retryable: true, errorCode: 'ENETWORK', errorMessage: 'Cotly could not reach Bluesky. Cotly will retry automatically.' });
     }
   };
-  let nonce = await getNonce(env);
+  let nonce = await getNonce(env, url);
   let res = await send(nonce);
   const retryWith = res.headers.get('dpop-nonce');
   const bodyText = await res.clone().text().catch(() => '');
   if ((res.status === 400 || res.status === 401) && retryWith && bodyText.includes('use_dpop_nonce')) {
-    await setNonce(env, retryWith);
+    await setNonce(env, url, retryWith);
     res = await send(retryWith);
   } else if (retryWith) {
-    await setNonce(env, retryWith);
+    await setNonce(env, url, retryWith);
   }
   const text = await res.text();
   let data: unknown = null;
@@ -338,8 +345,9 @@ export class BlueskyAdapter implements PlatformAdapter {
       client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
       client_assertion: assertion,
     });
-    const nonce = await getNonce(env);
-    const proof = await dpopProof(dpopJwk, 'POST', `${AUTH_SERVER}/oauth/par`, { nonce });
+    const parUrl = `${AUTH_SERVER}/oauth/par`;
+    const nonce = await getNonce(env, parUrl);
+    const proof = await dpopProof(dpopJwk, 'POST', parUrl, { nonce });
     let par: Response;
     try {
       par = await fetch(`${AUTH_SERVER}/oauth/par`, {
@@ -355,7 +363,7 @@ export class BlueskyAdapter implements PlatformAdapter {
       const firstBody = (await par.clone().text()).slice(0, 300);
       console.error('[bluesky-par] nonce retry needed:', par.status, firstBody);
       if (freshNonce) {
-        await setNonce(env, freshNonce);
+        await setNonce(env, parUrl, freshNonce);
         const retryProof = await dpopProof(dpopJwk, 'POST', `${AUTH_SERVER}/oauth/par`, { nonce: freshNonce });
         par = await fetch(`${AUTH_SERVER}/oauth/par`, {
           method: 'POST',
@@ -511,8 +519,18 @@ export class BlueskyAdapter implements PlatformAdapter {
       if (isAuthFailure(resp)) {
         try {
           const renewed = await this.refresh(env, { accessToken: account.accessToken, refreshToken: account.refreshToken }, account);
-          void renewed;
-          return { ok: true, detail: `Session renewed — token valid for ${account.displayName}. Cotly will pick up the renewed token on next use.` };
+          // ATProto rotates the refresh token on every refresh: a renewed pair
+          // that is not persisted here leaves the stored refresh token dead and
+          // the account unusable once the access token's hour is up.
+          const enc = await encryptSecret(env.ENCRYPTION_SECRET, renewed.accessToken);
+          const encRefresh = renewed.refreshToken ? await encryptSecret(env.ENCRYPTION_SECRET, renewed.refreshToken) : null;
+          await env.DB
+            .prepare(
+              `UPDATE social_accounts SET access_token_enc = ?, refresh_token_enc = COALESCE(?, refresh_token_enc), token_expires_at = ?, status = 'connected', updated_at = ? WHERE id = ?`,
+            )
+            .bind(enc, encRefresh, renewed.expiresAt ?? null, Math.floor(Date.now() / 1000), account.id)
+            .run();
+          return { ok: true, detail: `Session renewed and saved — token valid for ${account.displayName}.` };
         } catch {
           return { ok: false, detail: 'Authorization expired and could not be renewed. Reconnect Bluesky.' };
         }
