@@ -316,14 +316,16 @@ export class BlueskyAdapter implements PlatformAdapter {
   // server authenticates the user), push the authorization request via PAR,
   // and keep the per-attempt DPoP key + PKCE verifier in the state blob.
   async buildAuthUrl(env: Env, redirectUri: string, state: string): Promise<{ url: string; verifier: string }> {
-    const key = await getServerPrivateKeyJwk(env);
     const dpopPair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
     const dpopJwk = (await crypto.subtle.exportKey('jwk', dpopPair.privateKey)) as DpopPrivateJwk;
     const pkce = randomId(32);
     const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pkce)));
 
-    // With private_key_jwt declared, every auth-server request — PAR included —
-    // must authenticate with the client assertion.
+    // Confidential-client authentication (private_key_jwt) is separate from
+    // DPoP: the client assertion is signed with the JWKS key, while the session
+    // DPoP key signs the PAR proof — and per the ATProto spec that session key
+    // "is used starting with the PAR request", so the auth server binds it here
+    // and every later call (token, refresh, XRPC) must reuse the same key.
     const assertion = await clientAssertion(env, AUTH_SERVER);
     const parBody = new URLSearchParams({
       client_id: clientId(env),
@@ -337,7 +339,7 @@ export class BlueskyAdapter implements PlatformAdapter {
       client_assertion: assertion,
     });
     const nonce = await getNonce(env);
-    const proof = await dpopProof(key, 'POST', `${AUTH_SERVER}/oauth/par`, { nonce });
+    const proof = await dpopProof(dpopJwk, 'POST', `${AUTH_SERVER}/oauth/par`, { nonce });
     let par: Response;
     try {
       par = await fetch(`${AUTH_SERVER}/oauth/par`, {
@@ -354,7 +356,7 @@ export class BlueskyAdapter implements PlatformAdapter {
       console.error('[bluesky-par] nonce retry needed:', par.status, firstBody);
       if (freshNonce) {
         await setNonce(env, freshNonce);
-        const retryProof = await dpopProof(key, 'POST', `${AUTH_SERVER}/oauth/par`, { nonce: freshNonce });
+        const retryProof = await dpopProof(dpopJwk, 'POST', `${AUTH_SERVER}/oauth/par`, { nonce: freshNonce });
         par = await fetch(`${AUTH_SERVER}/oauth/par`, {
           method: 'POST',
           headers: { 'content-type': 'application/x-www-form-urlencoded', dpop: retryProof },
