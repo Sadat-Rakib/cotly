@@ -482,6 +482,9 @@ export class BlueskyAdapter implements PlatformAdapter {
       throw new Error(`Bluesky authorization expired (${providerErrorDetail(resp)}). Reconnect Bluesky and retry.`);
     }
     const expiresAt = typeof data.expires_in === 'number' ? Math.floor(Date.now() / 1000) + data.expires_in : undefined;
+    // TEMP DIAGNOSTIC: shape only — never the token value.
+    const seg = String(data.access_token).split('.');
+    console.error('[bluesky-dbg] access token segments:', seg.length, 'lengths:', seg.map((x) => x.length).join('/'), 'prefix:', String(data.access_token).slice(0, 4));
     return {
       accessToken: data.access_token,
       refreshToken: data.refresh_token,
