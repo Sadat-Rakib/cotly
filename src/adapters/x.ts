@@ -24,7 +24,7 @@ import {
 const AUTH = 'https://x.com/i/oauth2/authorize';
 const TOKEN = 'https://api.x.com/2/oauth2/token';
 const API = 'https://api.x.com/2';
-const UPLOAD = 'https://upload.twitter.com/1.1/media/upload.json';
+const MEDIA = 'https://api.x.com/2/media/upload';
 export const SCOPE = 'tweet.read tweet.write users.read media.write offline.access';
 
 // Conservative per-post estimate in USD (text create ~0.015; media upload ~0.010).
@@ -344,33 +344,57 @@ export class XAdapter implements PlatformAdapter {
     }
   }
 
-  // v1.1 INIT -> APPEND (chunked) -> FINALIZE with the user token. Videos are
-  // uploaded with the tweet_video category and processed asynchronously — the
-  // STATUS endpoint is polled briefly, and a still-processing job becomes a
-  // retryable failure so the ladder retries without duplicating the post.
+  // Base64 without blowing the call stack on multi-MB buffers.
+  private static bytesToBase64(bytes: Uint8Array): string {
+    let s = '';
+    const STEP = 0x8000;
+    for (let i = 0; i < bytes.byteLength; i += STEP) {
+      s += String.fromCharCode(...bytes.subarray(i, Math.min(i + STEP, bytes.byteLength)));
+    }
+    return btoa(s);
+  }
+
+  // Official X API v2 media upload with the OAuth2 user token (media.write):
+  // images go through the simple upload in one call; videos use chunked
+  // initialize -> append segments -> finalize, then STATUS is polled briefly.
+  // A still-processing job becomes a retryable failure so the ladder retries
+  // without duplicating the post. The tweet is created only after media
+  // processing reports succeeded.
   private async uploadMedia(env: Env, media: MediaRecord, secrets: Secrets, isVideo: boolean): Promise<string> {
     const bytes = await mediaBytes(env, media);
-    const category = isVideo ? 'tweet_video' : 'tweet_image';
-    const init = await httpJson(
-      `${UPLOAD}?command=INIT&total_bytes=${bytes.byteLength}&media_type=${encodeURIComponent(media.mime)}&media_category=${category}`,
-      {
+    const auth = { authorization: `Bearer ${secrets[0] ?? ''}` };
+    if (!isVideo) {
+      const category = media.mime === 'image/gif' ? 'tweet_gif' : 'tweet_image';
+      const simple = await httpJson(`${MEDIA}`, {
         method: 'POST',
-        headers: { authorization: `Bearer ${secrets[0] ?? ''}` },
-      },
-    );
+        headers: { ...auth, 'content-type': 'application/json' },
+        body: JSON.stringify({ media_category: category, media: XAdapter.bytesToBase64(bytes) }),
+      });
+      if (!simple.ok) mapApiError(simple, secrets, 'media_init');
+      const id = ((simple.data as { data?: { id?: unknown } | null }) ?? {}).data?.id;
+      if (typeof id !== 'string' || !id) {
+        throw fail(secrets, 'UPLOAD_INIT_FAILED', 'X did not return a media id for the uploaded image.', simple.raw);
+      }
+      return id;
+    }
+    const init = await httpJson(`${MEDIA}/initialize`, {
+      method: 'POST',
+      headers: { ...auth, 'content-type': 'application/json' },
+      body: JSON.stringify({ media_category: 'tweet_video', media_type: media.mime, total_bytes: bytes.byteLength }),
+    });
     if (!init.ok) mapApiError(init, secrets, 'media_init');
-    const mediaId = (init.data as { media_id_string?: unknown } | null)?.media_id_string;
+    const mediaId = ((init.data as { data?: { id?: unknown } | null }) ?? {}).data?.id;
     if (typeof mediaId !== 'string' || !mediaId) {
       throw fail(secrets, 'UPLOAD_INIT_FAILED', 'X did not provide an upload location for the media.', init.raw);
     }
-    // APPEND accepts up to 5 MB per segment.
+    // APPEND accepts up to 5 MB per segment (base64-encoded JSON chunks here).
     const CHUNK = 4 * 1024 * 1024;
     for (let i = 0, seg = 0; i < bytes.byteLength; i += CHUNK, seg++) {
       const chunk = bytes.subarray(i, Math.min(i + CHUNK, bytes.byteLength));
-      const append = await httpJson(`${UPLOAD}?command=APPEND&media_id=${encodeURIComponent(mediaId)}&segment_index=${seg}`, {
+      const append = await httpJson(`${MEDIA}/${encodeURIComponent(mediaId)}/append`, {
         method: 'POST',
-        headers: { authorization: `Bearer ${secrets[0] ?? ''}`, 'content-type': 'application/octet-stream' },
-        body: chunk,
+        headers: { ...auth, 'content-type': 'application/json' },
+        body: JSON.stringify({ media: XAdapter.bytesToBase64(chunk), segment_index: seg }),
       });
       if (!append.ok) {
         const tag = xFailureTag(secrets, 'media_append', append);
@@ -382,12 +406,13 @@ export class XAdapter implements PlatformAdapter {
         );
       }
     }
-    const finalize = await httpJson(`${UPLOAD}?command=FINALIZE&media_id=${encodeURIComponent(mediaId)}`, {
+    const finalize = await httpJson(`${MEDIA}/${encodeURIComponent(mediaId)}/finalize`, {
       method: 'POST',
-      headers: { authorization: `Bearer ${secrets[0] ?? ''}` },
+      headers: { ...auth, 'content-type': 'application/json' },
+      body: JSON.stringify({}),
     });
     if (!finalize.ok) mapApiError(finalize, secrets, 'media_finalize');
-    const processing = (finalize.data as { processing_info?: { state?: unknown; check_after_secs?: unknown } } | null)?.processing_info;
+    const processing = (finalize.data as { data?: { processing_info?: { state?: unknown; check_after_secs?: unknown } } | null })?.data?.processing_info;
     if (processing) {
       await this.awaitProcessing(mediaId, processing, secrets);
     }
@@ -412,7 +437,7 @@ export class XAdapter implements PlatformAdapter {
         throw failRetryable(secrets, 'MEDIA_PROCESSING', 'X could not process this media. Cotly will retry automatically. [stage=media_status]');
       }
       await new Promise((r) => setTimeout(r, wait * 1000));
-      const status = await httpJson(`${UPLOAD}?command=STATUS&media_id=${encodeURIComponent(mediaId)}`, {
+      const status = await httpJson(`${MEDIA}?media_id=${encodeURIComponent(mediaId)}&command=STATUS`, {
         method: 'GET',
         headers: { authorization: `Bearer ${secrets[0] ?? ''}` },
       });
@@ -420,7 +445,7 @@ export class XAdapter implements PlatformAdapter {
         const tag = xFailureTag(secrets, 'media_status', status);
         throw failRetryable(secrets, 'MEDIA_PROCESSING', `Cotly could not check the media processing state on X. Cotly will retry automatically. ${tag}`, status.raw);
       }
-      const next = (status.data as { processing_info?: { state?: unknown; check_after_secs?: unknown } } | null)?.processing_info;
+      const next = (status.data as { data?: { processing_info?: { state?: unknown; check_after_secs?: unknown } } | null })?.data?.processing_info;
       if (!next) break;
       state = stateOf(next);
       wait = typeof next.check_after_secs === 'number' ? Math.min(next.check_after_secs, 5) : 2;

@@ -155,23 +155,61 @@ describe('X adapter', () => {
     expect(calls.length).toBe(0);
   });
 
-  it('uploads an image through INIT/APPEND/FINALIZE and attaches the media id', async () => {
+  it('uploads an image through the v2 simple upload and attaches the media id', async () => {
     const calls = stubFetch([
-      () => jsonRes(200, { media_id_string: 'media-1' }),
-      () => jsonRes(200, {}),
-      () => jsonRes(200, {}),
+      () => jsonRes(200, { data: { id: 'media-1', media_key: '3_media-1' } }),
       () => jsonRes(201, { data: { id: '1790999', text: 'with image' } }),
     ]);
-    const bytes = new Uint8Array([1, 2, 3, 4]).buffer;
     const out = await new XAdapter().publish(mediaEnv(), input({ media: [media({ size: 4, r2Key: 'k' })] }));
-    expect(out.kind).toBe('confirmed');
-    const urls = calls.map((c) => c.url);
-    expect(urls[0]).toContain('command=INIT');
-    expect(urls[0]).toContain('media_category=tweet_image');
-    expect(urls[1]).toContain('command=APPEND');
-    expect(urls[2]).toContain('command=FINALIZE');
-    const tweetBody = JSON.parse(String(calls[3]?.init?.body));
+    expect(out).toMatchObject({ kind: 'confirmed', externalId: '1790999' });
+    expect(calls[0]?.url).toBe('https://api.x.com/2/media/upload');
+    const uploadBody = JSON.parse(String(calls[0]?.init?.body));
+    expect(uploadBody.media_category).toBe('tweet_image');
+    expect(typeof uploadBody.media).toBe('string');
+    const tweetBody = JSON.parse(String(calls[1]?.init?.body));
     expect(tweetBody.media.media_ids).toEqual(['media-1']);
+  });
+
+  it('uploads a video through v2 chunked initialize/append/finalize, then posts', async () => {
+    const calls = stubFetch([
+      () => jsonRes(200, { data: { id: 'vid-1' } }),
+      () => jsonRes(200, { data: {} }),
+      () => jsonRes(200, { data: { id: 'vid-1' } }),
+      () => jsonRes(201, { data: { id: '1790888', text: 'with video' } }),
+    ]);
+    const out = await new XAdapter().publish(
+      mediaEnv(),
+      input({ media: [media({ mime: 'video/mp4', size: 8, r2Key: 'v' })] }),
+    );
+    expect(out).toMatchObject({ kind: 'confirmed', externalId: '1790888' });
+    const urls = calls.map((c) => c.url);
+    expect(urls[0]).toBe('https://api.x.com/2/media/upload/initialize');
+    expect(urls[1]).toBe('https://api.x.com/2/media/upload/vid-1/append');
+    expect(urls[2]).toBe('https://api.x.com/2/media/upload/vid-1/finalize');
+    const initBody = JSON.parse(String(calls[0]?.init?.body));
+    // The R2 stand-in always returns 4 bytes regardless of the recorded size.
+    expect(initBody).toMatchObject({ media_category: 'tweet_video', media_type: 'video/mp4', total_bytes: 4 });
+    const appendBody = JSON.parse(String(calls[1]?.init?.body));
+    expect(appendBody.segment_index).toBe(0);
+    expect(typeof appendBody.media).toBe('string');
+    const tweetBody = JSON.parse(String(calls[3]?.init?.body));
+    expect(tweetBody.media.media_ids).toEqual(['vid-1']);
+  });
+
+  it('polls v2 media status until processing succeeds before posting', async () => {
+    const calls = stubFetch([
+      () => jsonRes(200, { data: { id: 'vid-2' } }),
+      () => jsonRes(200, { data: {} }),
+      () => jsonRes(200, { data: { id: 'vid-2', processing_info: { state: 'pending', check_after_secs: 0 } } }),
+      () => jsonRes(200, { data: { id: 'vid-2', processing_info: { state: 'succeeded' } } }),
+      () => jsonRes(201, { data: { id: '1790777', text: 'video ready' } }),
+    ]);
+    const out = await new XAdapter().publish(
+      mediaEnv(),
+      input({ media: [media({ mime: 'video/mp4', size: 8, r2Key: 'v' })] }),
+    );
+    expect(out).toMatchObject({ kind: 'confirmed', externalId: '1790777' });
+    expect(calls[3]?.url).toContain('https://api.x.com/2/media/upload?media_id=vid-2&command=STATUS');
   });
 
   it('tests the connection with a free users/me read', async () => {
