@@ -254,6 +254,10 @@ async function dpopXrpc(
 ): Promise<ProviderResponse> {
   const dpopEnc = typeof meta.dpopKeyEnc === 'string' ? meta.dpopKeyEnc : '';
   if (!dpopEnc) throw new Error('missing dpop key');
+  // TEMP DIAGNOSTIC: token shape only — never the token value.
+  const tseg = accessToken.split('.');
+  const badChar = [...accessToken].find((ch) => !/[A-Za-z0-9._-]/.test(ch));
+  console.error('[bluesky-dbg] sent token segments:', tseg.length, 'lengths:', tseg.map((x) => x.length).join('/'), 'prefix:', accessToken.slice(0, 4), 'non-b64url char:', JSON.stringify(badChar ?? null));
   const jwk = JSON.parse(await decryptSecret(env.ENCRYPTION_SECRET, dpopEnc)) as DpopPrivateJwk;
   const ath = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(accessToken)));
   const send = async (nonce?: string): Promise<Response> => {
