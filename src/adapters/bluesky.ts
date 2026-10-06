@@ -280,6 +280,11 @@ async function dpopXrpc(
   let res = await send(nonce);
   const retryWith = res.headers.get('dpop-nonce');
   const bodyText = await res.clone().text().catch(() => '');
+  if ((res.status === 400 || res.status === 401) && retryWith) {
+    // Surface the real nonce-challenge shape (PDS and auth server word it
+    // differently); never log tokens — bodies carry only provider errors.
+    console.error(`[bluesky-xrpc] dpop challenge ${res.status}:`, bodyText.slice(0, 180));
+  }
   if ((res.status === 400 || res.status === 401) && retryWith && bodyText.includes('use_dpop_nonce')) {
     await setNonce(env, url, retryWith);
     res = await send(retryWith);
@@ -520,6 +525,7 @@ export class BlueskyAdapter implements PlatformAdapter {
         return { ok: true, detail: `Token valid — identity ${handle}.` };
       }
       if (isAuthFailure(resp)) {
+        console.error('[bluesky-test] profile read rejected:', resp.status, resp.raw.slice(0, 200));
         try {
           const renewed = await this.refresh(env, { accessToken: account.accessToken, refreshToken: account.refreshToken }, account);
           // ATProto rotates the refresh token on every refresh: a renewed pair
