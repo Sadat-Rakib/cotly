@@ -486,9 +486,6 @@ export class BlueskyAdapter implements PlatformAdapter {
       throw new Error(`Bluesky authorization expired (${providerErrorDetail(resp)}). Reconnect Bluesky and retry.`);
     }
     const expiresAt = typeof data.expires_in === 'number' ? Math.floor(Date.now() / 1000) + data.expires_in : undefined;
-    // TEMP DIAGNOSTIC: shape only — never the token value.
-    const seg = String(data.access_token).split('.');
-    console.error('[bluesky-dbg] access token segments:', seg.length, 'lengths:', seg.map((x) => x.length).join('/'), 'prefix:', String(data.access_token).slice(0, 4));
     return {
       accessToken: data.access_token,
       refreshToken: data.refresh_token,
@@ -496,7 +493,6 @@ export class BlueskyAdapter implements PlatformAdapter {
     };
   }
 
-  // Report-only probe: a successful refresh here is NOT persisted — engine/API still owns tokens.
   // Revoke the issued tokens at the authorization server (best-effort).
   async revoke(env: Env, account: SocialAccountRecord): Promise<void> {
     try {
@@ -525,14 +521,7 @@ export class BlueskyAdapter implements PlatformAdapter {
         return { ok: false, detail: 'This Bluesky connection predates Cotly’s current sign-in and cannot be renewed. Reconnect Bluesky.' };
       }
       const pds = typeof account.meta.pdsUrl === 'string' ? account.meta.pdsUrl : AUTH_SERVER;
-      let resp = await dpopXrpc(env, account.meta, account.accessToken, 'GET', `${pds}/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(account.externalId)}`);
-      if (!resp.ok) {
-        // TEMP DIAGNOSTIC: native + proxied endpoints against both origins
-        const sessPds = await dpopXrpc(env, account.meta, account.accessToken, 'GET', `${pds}/xrpc/com.atproto.server.getSession`);
-        const sessEntry = await dpopXrpc(env, account.meta, account.accessToken, 'GET', `${AUTH_SERVER}/xrpc/com.atproto.server.getSession`);
-        console.error('[bluesky-dbg] getSession PDS:', sessPds.status, sessPds.raw.slice(0, 100), '| entryway:', sessEntry.status, sessEntry.raw.slice(0, 100));
-        if (sessEntry.ok) resp = sessEntry;
-      }
+      const resp = await dpopXrpc(env, account.meta, account.accessToken, 'GET', `${pds}/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(account.externalId)}`);
       if (resp.ok) {
         const raw = (resp.data as { handle?: unknown } | null)?.handle;
         const handle = redact(typeof raw === 'string' && raw ? raw : account.displayName, secrets);

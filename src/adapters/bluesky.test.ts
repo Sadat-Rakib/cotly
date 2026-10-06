@@ -157,7 +157,7 @@ describe('bluesky adapter (atproto OAuth)', () => {
     expect((calls[0]?.url ?? '').startsWith('https://pds.example/xrpc/')).toBe(true);
     const dpop = new Headers(calls[0]?.init?.headers).get('dpop') ?? '';
     expect(dpop.split('.')).toHaveLength(3);
-    expect(new Headers(calls[0]?.init?.headers).get('authorization')).toBe(`Bearer ${ACCESS}`);
+    expect(new Headers(calls[0]?.init?.headers).get('authorization')).toBe(`DPoP ${ACCESS}`);
   });
 
   it('uploads image blobs and embeds them', async () => {
