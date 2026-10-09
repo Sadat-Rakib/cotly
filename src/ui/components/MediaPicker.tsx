@@ -1,4 +1,4 @@
-import { memo, useCallback, useRef, useState, type ClipboardEvent, type Dispatch, type SetStateAction } from 'react';
+﻿import { memo, useCallback, useRef, useState, type ClipboardEvent, type Dispatch, type SetStateAction } from 'react';
 import { api, putWithProgress } from '../api';
 import { Lightbox } from './Lightbox';
 
@@ -113,7 +113,7 @@ export const MediaPicker = memo(function MediaPicker({ items, setItems }: Props)
     [addFiles],
   );
 
-  // Order matters (carousel posts) — buttons only, mobile-friendly.
+  // Order matters (carousel posts) â€” buttons only, mobile-friendly.
   const move = useCallback(
     (idx: number, dir: -1 | 1) => {
       setItems((prev) => {
@@ -199,7 +199,7 @@ export const MediaPicker = memo(function MediaPicker({ items, setItems }: Props)
                     disabled={idx === 0}
                     aria-label={`Move ${item.filename} up`}
                   >
-                    ↑
+                    â†‘
                   </button>
                   <button
                     type="button"
@@ -208,7 +208,7 @@ export const MediaPicker = memo(function MediaPicker({ items, setItems }: Props)
                     disabled={idx === items.length - 1}
                     aria-label={`Move ${item.filename} down`}
                   >
-                    ↓
+                    â†“
                   </button>
                 </div>
               )}
@@ -220,6 +220,9 @@ export const MediaPicker = memo(function MediaPicker({ items, setItems }: Props)
       {preview && (
         <Lightbox
           item={preview}
+          items={items}
+          index={items.findIndex((i) => i.previewUrl === preview.previewUrl)}
+          onNavigate={(n) => { const it = items[n]; if (it?.previewUrl) setPreviewKey(it.previewUrl); }}
           onClose={() => setPreviewKey(null)}
           onRemove={() => removeKey(preview.previewUrl)}
           onReplace={(f) => replaceKey(preview.previewUrl, f)}
@@ -228,3 +231,4 @@ export const MediaPicker = memo(function MediaPicker({ items, setItems }: Props)
     </div>
   );
 });
+

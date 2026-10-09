@@ -1,4 +1,4 @@
-/* Cotly — single stylesheet. Pastel sky: the app chrome matches the landing,
+﻿/* Cotly â€” single stylesheet. Pastel sky: the app chrome matches the landing,
    auth, and profile. One theme (light sky); the old light/dark switch is gone. */
 
 :root {
@@ -29,7 +29,7 @@
 html, body {
   margin: 0;
   padding: 0;
-  /* Dreamy sky wash behind the whole app — same family as the landing. */
+  /* Dreamy sky wash behind the whole app â€” same family as the landing. */
   background: linear-gradient(180deg, #eef0fe 0%, #f1ecfc 34%, #f7edf8 62%, #fdeff3 100%) fixed;
   color: var(--text);
   font: 15px/1.55 var(--font-body);
@@ -252,7 +252,7 @@ a { color: var(--accent); }
 
 .main-bare { padding-bottom: 48px; }
 
-/* The public landing is a full-bleed dark page — it escapes the app column.
+/* The public landing is a full-bleed dark page â€” it escapes the app column.
    It is styled in Tailwind rem sizes, so give it the browser-standard 16px
    root (the app uses 15px); :has() keeps this scoped to the landing only. */
 .main-landing { max-width: none; margin: 0; padding: 0; }
@@ -991,7 +991,7 @@ html:has(.main-landing, .main-auth) { font-size: 16px; }
 }
 .btn-lg { min-height: 48px; padding: 13px 24px; font-size: 0.98rem; }
 
-/* Static product preview — real tokens, honest copy, no fake analytics. */
+/* Static product preview â€” real tokens, honest copy, no fake analytics. */
 .landing-mock { display: grid; gap: 16px; max-width: 560px; margin: 0 auto; }
 .landing-mock-frame {
   border: 1px solid var(--border);
@@ -1233,3 +1233,6 @@ html:has(.main-landing, .main-auth) { font-size: 16px; }
 img.lightbox-media { object-fit: contain; }
 .lightbox-actions { justify-content: space-between; }
 .lightbox-replace { cursor: pointer; }
+.lightbox-nav { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 10px; }
+.lightbox-counter { min-width: 48px; text-align: center; }
+
