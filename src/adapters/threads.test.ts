@@ -157,7 +157,7 @@ describe('threads adapter', () => {
     expect(decodeURIComponent(String(calls[0]?.url))).toContain('X-Amz-Signature');
   });
 
-  it('retries the processing race (error 24) and gives up retryable without publishing', async () => {
+  it('retries the processing race (error 24), then hands off to pending (never a hard failure)', async () => {
     vi.useFakeTimers();
     try {
       const calls = stubFetch([
@@ -167,7 +167,8 @@ describe('threads adapter', () => {
       const pending = new ThreadsAdapter().publish(env, input());
       for (let i = 0; i < 6; i++) await vi.advanceTimersByTimeAsync(2000);
       const out = await pending;
-      expect(out).toMatchObject({ kind: 'failed', retryable: true, errorCode: 'CONTAINER_PROCESSING' });
+      expect(out.kind).toBe('pending');
+      expect((out as { externalId: string }).externalId).toContain('container:');
       // Exactly the 4 bounded in-request attempts with the same creation_id —
       // retries can never duplicate the post (one creation_id publishes once);
       // the retry ladder (not the HTTP request) carries the wait from here.
