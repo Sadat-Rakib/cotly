@@ -35,11 +35,11 @@ export function SignupPage({ onDone, onNav }: Props) {
   return (
     <AuthShell>
       <h1 className="text-[#1e1b4b] font-instrument text-3xl text-center mt-6">Create your Cotly account.</h1>
-      <p className="text-[#1e1b4b]/60 text-sm text-center mt-1.5">One place to write, schedule, and move on.</p>
+      <p className="text-[#1e1b4b]/75 text-sm text-center mt-1.5">One place to write, schedule, and move on.</p>
 
       <form onSubmit={submit} className="mt-8 flex flex-col gap-4">
         <label className="block">
-          <span className="text-xs font-medium text-[#1e1b4b]/60">Name</span>
+          <span className="text-xs font-semibold text-[#1e1b4b]/75">Name</span>
           <input
             className={`${inputClass} mt-1.5`}
             type="text"
@@ -50,7 +50,7 @@ export function SignupPage({ onDone, onNav }: Props) {
           />
         </label>
         <label className="block">
-          <span className="text-xs font-medium text-[#1e1b4b]/60">Email</span>
+          <span className="text-xs font-semibold text-[#1e1b4b]/75">Email</span>
           <input
             className={`${inputClass} mt-1.5`}
             type="email"
@@ -62,7 +62,7 @@ export function SignupPage({ onDone, onNav }: Props) {
         </label>
         <div className="mt-0">
           <PasswordField value={password} onChange={setPassword} autoComplete="new-password" />
-          <span className="text-xs text-[#1e1b4b]/60 mt-1 block">At least 8 characters.</span>
+          <span className="text-xs text-[#1e1b4b]/75 mt-1 block">At least 8 characters.</span>
         </div>
 
         {err && (

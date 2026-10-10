@@ -1,5 +1,5 @@
-// The Cotly mark: a thin "C" ring with a single leaf reaching through the
-// opening — a nod to posting something small that grows. Stroke-based and
+// The Cotly mark: an open "C" ring with a single dot exiting through the
+// gap — a post leaving the composer on its way out. Stroke-based and
 // currentColor so it sits on any surface at any size.
 
 interface MarkProps {
@@ -20,8 +20,8 @@ export function LogoMark({ className = 'w-6 h-6' }: MarkProps) {
         strokeDasharray="52.8 13.2"
         transform="rotate(36 16 16)"
       />
-      {/* Leaf through the gap */}
-      <path d="M18.2 13.8c.4-3.4 2.6-5.9 6.6-6.8-.5 3.9-2.9 6.2-6.6 6.8z" fill="currentColor" />
+      {/* The dot, just outside the gap — published */}
+      <circle cx="28.2" cy="16" r="2.5" fill="currentColor" />
     </svg>
   );
 }

@@ -60,8 +60,8 @@ interface Props {
   authed: boolean;
 }
 
-// Demo rows for the scheduling showcase. These demonstrate the product; they
-// are not testimonials and name no customers.
+// Demo rows for the scheduling showcase. These demonstrate the product with
+// sample content — they are not testimonials, real posts, or real accounts.
 type DemoPlatform = 'x' | 'instagram' | 'tiktok' | 'youtube' | 'linkedin';
 
 const QUEUE_ROWS: Array<{
@@ -80,34 +80,34 @@ const QUEUE_ROWS: Array<{
     date: 'Oct 4',
     time: '9:30 AM',
     status: 'Scheduled',
-    thumb: '/brand/queue-thumb-2.webp',
+    thumb: '/brand/thumb-launch.svg',
   },
   {
-    post: 'Behind the scenes',
-    caption: '"A quick look at what went into this..."',
+    post: 'Workspace tour',
+    caption: '"A quick look at where it all happens..."',
     platforms: ['instagram', 'tiktok'],
     date: 'Oct 4',
     time: '1:00 PM',
     status: 'Scheduled',
-    thumb: '/brand/queue-thumb-4.webp',
+    thumb: '/brand/thumb-workspace.svg',
   },
   {
-    post: 'Launch walkthrough',
+    post: 'Mobile walkthrough',
     caption: '"Here\'s the full walkthrough!"',
     platforms: ['youtube', 'x', 'linkedin'],
     date: 'Oct 5',
     time: '10:00 AM',
     status: 'Preparing',
-    thumb: '/brand/queue-thumb-1.webp',
+    thumb: '/brand/thumb-walkthrough.svg',
   },
   {
-    post: 'Weekend update',
+    post: 'Team update',
     caption: '"Everything we shipped this week."',
     platforms: ['x', 'instagram'],
     date: 'Oct 5',
     time: '4:30 PM',
     status: 'Scheduled',
-    thumb: '/brand/queue-thumb-3.webp',
+    thumb: '/brand/thumb-team.svg',
   },
 ];
 
@@ -136,7 +136,9 @@ const rise = (delay = 0, y = 16) => ({
 
 // The hero centerpiece: the supplied holographic projector render (with its
 // own clean alpha), floating gently over the supplied sky. Width capped per
-// spec; the soft glow follows the asset's alpha shape.
+// spec; the soft glow follows the asset's alpha shape. The hand-written
+// tagline sits below the illustration on every breakpoint — never beside or
+// over it, so nothing clips or overlaps at any width.
 function HeroVisual() {
   return (
     <div className="relative mx-auto w-[min(100%,680px)] md:w-[min(88%,740px)] lg:w-[min(78%,780px)]">
@@ -151,18 +153,25 @@ function HeroVisual() {
       />
 
       <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.8, ease: EASE, delay: 1 }}
-        aria-hidden="true"
-        className="hidden lg:block absolute z-10 -right-16 xl:-right-24 top-[34%] -rotate-6 text-right"
+        className="relative z-10 text-center -mt-2 md:-mt-4"
       >
-        <p className="font-hand text-[#4a44c9] text-2xl leading-tight drop-shadow-[0_2px_6px_rgba(255,255,255,0.55)]">
+        <p className="font-hand text-[#4a44c9] text-3xl md:text-4xl leading-tight drop-shadow-[0_2px_6px_rgba(255,255,255,0.65)]">
           Write once.
           <br />
           Publish everywhere.
         </p>
-        <svg viewBox="0 0 60 40" className="w-10 h-7 ml-auto mr-6 mt-1 text-[#4a44c9]" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+        <svg
+          viewBox="0 0 60 40"
+          className="w-10 h-7 mx-auto mt-1 text-[#4a44c9] rotate-[8deg]"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          aria-hidden="true"
+        >
           <path d="M6 4 C 18 26, 34 30, 50 22" />
           <path d="M42 20 l 9 2 -4 8" />
         </svg>
@@ -232,7 +241,7 @@ export function Landing({ navigate, authed }: Props) {
                 key={l.href}
                 href={l.href}
                 onClick={l.onClick}
-                className={`no-underline text-sm font-medium transition-colors ${scrolled ? 'text-[#1e1b4b]/70 hover:text-[#1e1b4b]' : 'text-white/75 hover:text-white'}`}
+                className={`no-underline text-[15px] font-semibold transition-colors ${scrolled ? 'text-[#1e1b4b]/80 hover:text-[#1e1b4b]' : 'text-white/85 hover:text-white'}`}
               >
                 {l.label}
               </a>
@@ -395,6 +404,11 @@ export function Landing({ navigate, authed }: Props) {
           <motion.p {...rise(0.08)} className="text-[#1e1b4b]/70 text-center mt-4 max-w-xl mx-auto">
             See what's going out, where it's going, and exactly when Cotly will publish it.
           </motion.p>
+          <motion.p {...rise(0.12)} className="text-center mt-3">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-white/60 border border-white/90 px-3 py-1 text-xs font-semibold text-[#1e1b4b]/75 shadow-sm">
+              Demo preview — sample content, not real posts
+            </span>
+          </motion.p>
 
           <motion.div {...rise(0.15, 24)} className="mt-12">
             {/* Desktop: real glass scheduling table */}
@@ -522,18 +536,20 @@ export function Landing({ navigate, authed }: Props) {
 
         {/* -------- Footer -------- */}
         <footer className="relative z-10 max-w-6xl mx-auto px-6 pb-10">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-[#1e1b4b]/75">
-            <div className="flex items-center gap-2 text-[#1e1b4b]">
-              <LogoMark className="w-4 h-4" />
-              <span className="font-semibold tracking-tight">Cotly</span>
+          <div className="rounded-3xl bg-white/55 backdrop-blur-xl border border-white/90 shadow-lg shadow-[#3a2f9e]/10 px-7 py-6">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-5 text-sm text-[#1e1b4b]/85">
+              <div className="flex items-center gap-2 text-[#1e1b4b]">
+                <LogoMark className="w-4 h-4" />
+                <span className="font-semibold tracking-tight">Cotly</span>
+              </div>
+              <nav className="flex items-center gap-6">
+                <a href="/terms" onClick={goto('/terms')} className="no-underline text-[#1e1b4b]/85 hover:text-[#1e1b4b] text-[15px] transition-colors">Terms</a>
+                <a href="/privacy" onClick={goto('/privacy')} className="no-underline text-[#1e1b4b]/85 hover:text-[#1e1b4b] text-[15px] transition-colors">Privacy</a>
+                <a href="mailto:hello@cotly.app" className="no-underline text-[#1e1b4b]/85 hover:text-[#1e1b4b] text-[15px] transition-colors">Contact</a>
+              </nav>
             </div>
-            <nav className="flex items-center gap-6">
-              <a href="/terms" onClick={goto('/terms')} className="no-underline text-[#1e1b4b]/80 hover:text-[#1e1b4b] text-[15px] transition-colors">Terms</a>
-              <a href="/privacy" onClick={goto('/privacy')} className="no-underline text-[#1e1b4b]/80 hover:text-[#1e1b4b] text-[15px] transition-colors">Privacy</a>
-              <a href="mailto:hello@cotly.app" className="no-underline text-[#1e1b4b]/80 hover:text-[#1e1b4b] text-[15px] transition-colors">Contact</a>
-            </nav>
+            <p className="text-center text-[#1e1b4b]/70 text-sm mt-5 pt-4 border-t border-[#1e1b4b]/10">© 2026 Cotly.</p>
           </div>
-          <p className="text-center text-[#1e1b4b]/60 text-sm mt-8">© 2026 Cotly.</p>
         </footer>
       </div>
     </div>

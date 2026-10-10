@@ -1,4 +1,4 @@
-﻿/* Cotly â€” single stylesheet. Pastel sky: the app chrome matches the landing,
+/* Cotly — single stylesheet. Pastel sky: the app chrome matches the landing,
    auth, and profile. One theme (light sky); the old light/dark switch is gone. */
 
 :root {
@@ -29,7 +29,7 @@
 html, body {
   margin: 0;
   padding: 0;
-  /* Dreamy sky wash behind the whole app â€” same family as the landing. */
+  /* Dreamy sky wash behind the whole app — same family as the landing. */
   background: linear-gradient(180deg, #eef0fe 0%, #f1ecfc 34%, #f7edf8 62%, #fdeff3 100%) fixed;
   color: var(--text);
   font: 15px/1.55 var(--font-body);
@@ -96,19 +96,22 @@ a { color: var(--accent); }
   white-space: nowrap;
 }
 
-.sb-collapse {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
+/* The brand itself toggles the rail (no separate collapse button). */
+.sb-brand-toggle {
   border: none;
-  border-radius: 9px;
   background: none;
-  color: var(--muted);
   cursor: pointer;
+  font: inherit;
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  padding: 4px 6px;
+  margin: -4px -6px;
+  border-radius: 10px;
+  transition: background 140ms ease;
 }
-.sb-collapse:hover { background: var(--surface-2); color: var(--text); }
+.sb-brand-toggle:hover { background: var(--surface-2); }
+.sb-brand-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sb-brand-toggle .sb-label { overflow: visible; }
 
 .sb-nav { display: flex; flex-direction: column; gap: 4px; flex: 1; }
 
@@ -141,7 +144,7 @@ a { color: var(--accent); }
 
 .sb-rail.collapsed .sb-item { justify-content: center; padding: 9px 0; }
 .sb-rail.collapsed .sb-label { display: none; }
-.sb-rail.collapsed .sb-head { flex-direction: column; gap: 10px; }
+.sb-rail.collapsed .sb-head { justify-content: center; }
 
 .sb-foot {
   display: flex;
@@ -237,13 +240,19 @@ a { color: var(--accent); }
 }
 
 @media (min-width: 880px) {
+  /* The rail is its own fixed element; the main column only offsets by its
+     width (never also pads by it — that double-counted the sidebar and left
+     ~270px of dead space). Content stays centered-ish in the remaining room
+     with a 24–48px responsive gutter and a ~1120px max content width. */
   .app-shell .main-app {
     margin-left: var(--sb-w);
-    max-width: none;
-    padding: 28px 32px 64px calc(var(--sb-w) + 40px);
+    margin-right: auto;
+    max-width: calc(1120px + 96px);
+    padding: 28px clamp(24px, 4vw, 48px) 64px;
+    transition: margin-left 0.22s ease;
   }
   body:has(.sb-rail.collapsed) .main-app {
-    padding-left: calc(var(--sb-w-collapsed) + 40px);
+    margin-left: var(--sb-w-collapsed);
   }
 }
 @media (max-width: 879px) {
@@ -252,7 +261,7 @@ a { color: var(--accent); }
 
 .main-bare { padding-bottom: 48px; }
 
-/* The public landing is a full-bleed dark page â€” it escapes the app column.
+/* The public landing is a full-bleed dark page — it escapes the app column.
    It is styled in Tailwind rem sizes, so give it the browser-standard 16px
    root (the app uses 15px); :has() keeps this scoped to the landing only. */
 .main-landing { max-width: none; margin: 0; padding: 0; }
@@ -1016,7 +1025,7 @@ html:has(.main-landing, .main-auth) { font-size: 16px; }
 }
 .btn-lg { min-height: 48px; padding: 13px 24px; font-size: 0.98rem; }
 
-/* Static product preview â€” real tokens, honest copy, no fake analytics. */
+/* Static product preview — real tokens, honest copy, no fake analytics. */
 .landing-mock { display: grid; gap: 16px; max-width: 560px; margin: 0 auto; }
 .landing-mock-frame {
   border: 1px solid var(--border);
