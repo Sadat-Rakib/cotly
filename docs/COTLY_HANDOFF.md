@@ -53,3 +53,20 @@ Checkpoint for resuming the MVP recovery mission. Resume from the "Next steps".
 - Phases 5-9 docs written from verified evidence. All 10 COTLY_* docs present.
 - Final suite re-confirmed: 152/152 PASS, typecheck 0, build clean.
 - Remaining = owner external actions only (credentials, Meta review, deploy).
+
+## Session 2026-10-10 (UI + live E2E)
+- PRD Phase 1 UI implemented, commit 79636a7: brand mark = open C + dot
+  exiting the gap (Logo.tsx, all brand SVGs, favicon, regenerated PNGs via
+  scripts/generate-brand-pngs.js; hero artwork's old C patched via
+  scripts/patch-hero-mark.mjs reading hero-device-src.webp). Hero tagline now
+  below the illustration at every width; navbar font bumped; 4 distinct demo
+  thumbs (rocket/workspace/phone/team SVGs) + visible "demo" label; glass
+  footer; auth contrast; sidebar logo-toggles-collapse (no separate button,
+  persisted, tooltips via title+aria-label); fixed main column double-counting
+  --sb-w (content had ~270px dead gap; collapsed state worse).
+- Live browser E2E vs real Worker+D1+MockSocial: publish-now AND scheduled
+  paths verified incl. no-early-publish via the real scheduled handler; see
+  COTLY_TEST_REPORT.md. Clean `npm ci` → typecheck/test/build all green.
+- A user WIP (encoding fixes + lightbox feature revert) was preserved in
+  git stash "WIP checkpoint 2026-10-10"; the encoding fixes were re-applied
+  properly, the lightbox revert was intentionally NOT kept (it undid add243e).
