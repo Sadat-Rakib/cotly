@@ -6,6 +6,7 @@ import { HttpError, json, readJson } from '../lib/http';
 import { requireSession } from '../lib/sessions';
 import { isValidTimezone, nowS, PROVIDER_LABEL } from './_shared';
 import { publishPostNow } from '../engine/cron';
+import { resolveDuePending } from '../engine/publish';
 import { allowAttempt } from '../lib/ratelimit';
 
 interface FieldError {
@@ -124,6 +125,29 @@ function parseTargets(raw: unknown): TargetInput[] {
       accountId: String(t.accountId ?? ''),
       ...(isStr(t.captionOverride) ? { captionOverride: t.captionOverride } : {}),
     }));
+}
+
+
+// Fast path for container-backed platforms (Threads, Instagram): after the
+// container is created the post sits 'publishing' until the provider confirms
+// it. Poll the SAME resolution pipeline the cron uses for a bounded window so
+// most posts confirm inside the request instead of after a minute; anything
+// slower keeps going on the graduated cron ladder. Exactly-once guarantees
+// are unchanged — resolution runs the normal pending machinery (generation
+// checks, 24h cap, one status check per attempt), just earlier.
+const PENDING_INLINE_POLL_MS = 4000;
+const PENDING_INLINE_POLLS = 3;
+async function settlePendingNow(env: Env, id: string): Promise<void> {
+  for (let i = 0; i < PENDING_INLINE_POLLS; i++) {
+    await new Promise((r) => setTimeout(r, PENDING_INLINE_POLL_MS));
+    try {
+      await resolveDuePending(env, Math.floor(Date.now() / 1000));
+    } catch {
+      return; // the cron ladder continues; never fail the request here
+    }
+    const row = await env.DB.prepare('SELECT status FROM posts WHERE id = ?').bind(id).first<{ status: string }>();
+    if (!row || ['published', 'failed', 'needs_reconnect', 'cancelled'].includes(row.status)) return;
+  }
 }
 
 export async function create(req: Request, env: Env, userId: string): Promise<Response> {
@@ -512,6 +536,7 @@ export async function publishNow(env: Env, userId: string, id: string): Promise<
   // carries the real provider outcome without the full-tick wait).
   try {
     await publishPostNow(env, id);
+    await settlePendingNow(env, id);
   } catch {
     // the next cron tick retries; the queue view reflects the real state
   }

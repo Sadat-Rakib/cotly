@@ -4,14 +4,17 @@ Screencast script for App Review. One continuous recording per app is ideal.
 Keep the permission consent dialog clearly visible. Do not edit out the consent.
 
 ## Pre-roll (all apps)
-1. Open https://cotly.cotly-app.workers.dev — show the landing page.
+1. Open https://cotly-social.vercel.app — show the landing page. (This is the
+   canonical frontend; OAuth briefly touches the Worker callback origin
+   https://cotly.cotly-app.workers.dev/oauth/<provider>/callback and
+   immediately 302s back to https://cotly-social.vercel.app/app/profile.)
 2. Sign up / log in. Briefly show the Compose screen so reviewers see the product.
 
 ## Facebook Pages
 1. Profile -> Facebook Pages -> Connect.
 2. Show the Meta consent dialog with pages_show_list / pages_read_engagement /
    pages_manage_posts visible.
-3. Page chooser lists the tester''s Pages -> select one.
+3. Page chooser lists the tester's Pages -> select one.
 4. Compose -> caption "Cotly App Review test." -> Publish now.
 5. Queue shows Published -> open the Facebook Page showing the new post.
 
@@ -34,6 +37,6 @@ Keep the permission consent dialog clearly visible. Do not edit out the consent.
   deauthorize POST and deletes the connection. Show /data-deletion instructions.
 
 ## Notes for the recorder
-- Narrate that every publish is the user''s own content to the user''s own
+- Narrate that every publish is the user's own content to the user's own
   destination, triggered explicitly.
 - Do not speed up or cut the consent screen; reviewers require it in full.

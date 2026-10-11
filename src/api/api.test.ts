@@ -644,3 +644,54 @@ test('logout clears cookies', async () => {
   const raw = (res.headers as unknown as { getSetCookie?: () => string[] }).getSetCookie?.() ?? [];
   expect(raw.some((c) => c.startsWith('cotly_session=') && c.includes('Max-Age=0'))).toBe(true);
 });
+
+test('reconnected accounts stop the reconnection warning; historical failures stay visible', async () => {
+  // The Queue banner derives from /api/accounts (current connection state),
+  // never from historical post_target rows. This pins that contract: after a
+  // reconnect, the warning source clears even though the old target row that
+  // failed with needs_reconnect still exists.
+  const userId = (await e.DB.prepare('SELECT id FROM users LIMIT 1').first<{ id: string }>())!.id;
+  const t = nowS();
+  await e.DB
+    .prepare(
+      `INSERT INTO social_accounts (id, owner_id, provider, external_id, display_name, access_token_enc, token_expires_at, status, meta, created_at, updated_at)
+       VALUES ('acc_regress', ?, 'mock', 'ext_regress', 'Regress', ?, ?, 'needs_reconnect', '{}', ?, ?)`,
+    )
+    .bind(userId, await encryptSecret(SECRET, 'stale-token'), t + 3600, t, t)
+    .run();
+  await e.DB
+    .prepare(
+      `INSERT INTO posts (id, owner_id, base_caption, status, scheduled_at, publish_mode, created_at, updated_at)
+       VALUES ('post_regress', ?, 'Regress caption', 'failed', ?, 'now', ?, ?)`,
+    )
+    .bind(userId, t - 60, t, t)
+    .run();
+  await e.DB
+    .prepare(
+      `INSERT INTO post_targets (id, post_id, social_account_id, platform, status, scheduled_at, created_at, updated_at)
+       VALUES ('tgt_regress', 'post_regress', 'acc_regress', 'mock', 'needs_reconnect', ?, ?, ?)`,
+    )
+    .bind(t - 60, t, t)
+    .run();
+
+  // 1) Warning justified while the account genuinely needs reconnection.
+  let list = (await (await api('/api/accounts', 'GET', undefined, { auth: true })).json()) as Array<{ id: string; status: string }>;
+  expect(list.find((a) => a.id === 'acc_regress')?.status).toBe('needs_reconnect');
+
+  // 2) Reconnect — same end state the reconnect path persists (fresh token,
+  //    status back to connected). The warning source must clear.
+  await e.DB
+    .prepare(`UPDATE social_accounts SET status = 'connected', access_token_enc = ?, last_verified_at = ?, updated_at = ? WHERE id = 'acc_regress'`)
+    .bind(await encryptSecret(SECRET, 'fresh-token'), t, t)
+    .run();
+  list = (await (await api('/api/accounts', 'GET', undefined, { auth: true })).json()) as Array<{ id: string; status: string }>;
+  expect(list.find((a) => a.id === 'acc_regress')?.status).toBe('connected');
+
+  // 3) The historical needs_reconnect failure remains visible in the failed
+  //    view — surfaced separately from the account-level warning.
+  const res = await api('/api/posts?view=failed&limit=50', 'GET', undefined, { auth: true });
+  const failed = (await res.json()) as Array<{ id: string; targets: Array<{ id: string; status: string }> }> | { posts: Array<{ id: string; targets: Array<{ id: string; status: string }> }> };
+  const rows = Array.isArray(failed) ? failed : failed.posts;
+  const row = rows?.find((p) => p.id === 'post_regress');
+  expect(row?.targets.some((tg) => tg.id === 'tgt_regress' && tg.status === 'needs_reconnect')).toBe(true);
+});

@@ -13,7 +13,11 @@ import type { ClaimedTarget } from './claim';
 // Index = attempt_count after increment: attempt 1 -> +120s ... attempt 4 -> +7200s.
 export const RETRY_LADDER = [0, 120, 600, 1800, 7200] as const;
 const MAX_ATTEMPTS = 5;
-const PENDING_RETRY_SECONDS = 60;
+// Graduated container-poll ladder (seconds until the next container status
+// check). Image containers are usually ready within seconds, so the first
+// re-check is fast enough that Publish Now feels instant; later checks back
+// off for video/processing. Bounded — the 24h pending cap still applies.
+const PENDING_RETRY_LADDER = [10, 15, 30, 60, 120];
 const PENDING_MAX_AGE_SECONDS = 86_400;
 
 export type PublishResult =
@@ -188,11 +192,13 @@ export async function applyOutcome(
     case 'pending': {
       // Stay in a truthful in-flight state: status='publishing' with the
       // container id stored. A container creation is NOT a publication.
+      const attempt = t.attempt_count + 1;
+      const delay = PENDING_RETRY_LADDER[Math.min(attempt, PENDING_RETRY_LADDER.length) - 1] ?? 120;
       await env.DB
         .prepare(
-          `UPDATE post_targets SET status = 'publishing', provider_post_id = ?, next_retry_at = ?, attempt_count = attempt_count + 1, updated_at = ? WHERE id = ?`,
+          `UPDATE post_targets SET status = 'publishing', provider_post_id = ?, next_retry_at = ?, attempt_count = ?, updated_at = ? WHERE id = ?`,
         )
-        .bind(outcome.externalId, now + PENDING_RETRY_SECONDS, now, t.id)
+        .bind(outcome.externalId, now + delay, attempt, now, t.id)
         .run();
       return 'pending';
     }

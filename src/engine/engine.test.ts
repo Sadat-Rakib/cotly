@@ -259,14 +259,19 @@ test('[mock:delay] pending resolves to published on a later tick', async () => {
     expect(t.status).toBe('publishing');
     expect(t.provider_post_id).toMatch(/^mockc_/);
     expect(t.published_at).toBeNull();
-    expect(t.next_retry_at).toBe(t0 + 60);
+    // Graduated container-poll ladder: the first re-check is fast (10s) so
+    // container-backed posts confirm quickly instead of after a minute.
+    expect(t.next_retry_at).toBe(t0 + 10);
 
+    // The [mock:delay] container simulates 60s of provider processing, so the
+    // ladder polls through its steps and confirms on the tick after readiness.
     vi.setSystemTime((t0 + 61) * 1000);
     await runSchedulerTick(e);
     t = await target(targetId);
     expect(t.status).toBe('published');
     expect(t.published_at).toBe(t0 + 61);
     expect(t.provider_permalink).toBeTruthy();
+    expect(t.attempt_count).toBeGreaterThan(1);
   } finally {
     vi.useRealTimers();
   }

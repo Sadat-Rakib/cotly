@@ -1,4 +1,5 @@
 ﻿import { useCallback, useEffect, useRef, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 
 export interface ModalProps {
   title: string;
@@ -78,7 +79,11 @@ export function Modal({ title, onClose, children, disableDismiss, onBeforeClose 
     return () => window.removeEventListener('keydown', onKey, true);
   }, [attemptClose]);
 
-  return (
+  // Portal to <body>: app cards use backdrop-filter, which makes them the
+  // containing block for position:fixed descendants — without the portal the
+  // overlay would size/position against the card instead of the viewport
+  // (broken on mobile, where cards are small).
+  return createPortal(
     <div className="modal-overlay" onClick={attemptClose} role="presentation">
       <div
         className="modal card"
@@ -95,6 +100,7 @@ export function Modal({ title, onClose, children, disableDismiss, onBeforeClose 
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

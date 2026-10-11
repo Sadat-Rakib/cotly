@@ -16,11 +16,19 @@ Do NOT submit to Meta without explicit owner authorization.
 - [x] Threads deauthorize callback (POST) — /oauth/threads/deauthorize (verified
       signed_request, deletes the connection) — `src/api/accounts.ts`.
 
-## OAuth callbacks (production, no localhost in prod config)
-- [x] /oauth/facebook/callback
-- [x] /oauth/instagram/callback
-- [x] /oauth/threads/callback
-All derived from production APP_URL via oauthCallbackBase().
+## Exact URLs to register in each Meta app dashboard (production values)
+- App site / website URL: `https://cotly-social.vercel.app`
+- Privacy Policy: `https://cotly-social.vercel.app/privacy`
+- Terms: `https://cotly-social.vercel.app/terms`
+- Data deletion instructions: `https://cotly-social.vercel.app/data-deletion`
+- User-facing data deletion return: implemented at /data-deletion (canonical).
+- Valid OAuth Redirect URIs (provider-facing Worker origin, NOT the SPA):
+  - `https://cotly.cotly-app.workers.dev/oauth/facebook/callback`
+  - `https://cotly.cotly-app.workers.dev/oauth/instagram/callback`
+  - `https://cotly.cotly-app.workers.dev/oauth/threads/callback`
+- Threads deauthorize callback: `https://cotly.cotly-app.workers.dev/oauth/threads/deauthorize`
+Users are always returned to the canonical Vercel domain: every OAuth handler
+302s to `${APP_URL}/app/profile?...` (verified live).
 
 ## Permissions requested vs implemented (scope minimalism)
 | App | Permission | Implemented use | Verified in |
@@ -34,12 +42,42 @@ All derived from production APP_URL via oauthCallbackBase().
 | Threads | threads_content_publish | publish | threads.ts |
 No scope is requested that the code does not use.
 
-## Owner/dashboard actions still required (cannot be done in-repo)
-- [ ] Submit App Review for each permission set (needs the demo screencast).
-- [ ] Business verification / Business Portfolio for the Facebook app.
-- [ ] Accept latest Platform Terms.
-- [ ] Register callbacks + deauthorize URL in each app's settings.
-- [ ] Provide reviewer test accounts (incl. an IG Business/Creator account).
+## Per-app verdict (2026-10-11) — READY / MISSING / BLOCKED
+| App | Permission | Implementation | Live proof | Verdict |
+|---|---|---|---|---|
+| Threads | threads_basic | COMPLETE (threads.ts; identity shown in Profile) | Connected account live in prod | **READY** — code done |
+| Threads | threads_content_publish | COMPLETE (container -> threads_publish, pending resolution) | **LIVE-VERIFIED 2026-10-11**: publish-now + cron-scheduled posts with permalinks threads.com/@mirsadat.ai/post/DeVdO6fimjx and /DeVelhLiB6g | **READY** — code done |
+| Instagram | instagram_business_basic | COMPLETE (instagram.ts, accounts.ts) | Connected account live in prod | **READY** — code done |
+| Instagram | instagram_business_content_publish | COMPLETE (container + publish; graduated pending ladder) | **LIVE-VERIFIED 2026-10-11**: image post published, permalink instagram.com/p/DeVcE8vCmon | **READY** — code done |
+| Facebook | pages_show_list | COMPLETE (Page chooser) | Connect flow implemented; live publish not yet demonstrated | **READY** — code done |
+| Facebook | pages_read_engagement | COMPLETE (Page identity) | same | **READY** — code done |
+| Facebook | pages_manage_posts | COMPLETE (Graph /{page}/feed) | unit-tested; live publish not yet demonstrated | **READY** — code done |
+
+### MISSING (owner dashboard actions before submission — one checklist)
+1. [ ] Record the screencast per docs/COTLY_META_REVIEW_DEMO_SCRIPT.md
+       (Threads + Instagram flows are the same ones verified live above).
+2. [ ] In each Meta app: Settings -> Basic -> fill App domains
+       (cotly-social.vercel.app), Privacy Policy, Terms, Data Deletion URLs
+       (exact values above); add platform = Website.
+3. [ ] Register the three Valid OAuth Redirect URIs + the Threads deauthorize
+       callback (exact values above) in Facebook Login / Instagram / Threads
+       products' settings.
+4. [ ] Facebook app: complete Business verification / Business Portfolio and
+       accept the latest Platform Terms.
+5. [ ] Switch each app to Production mode (requires 1+ admin with the roles
+       granted; Advanced Access is granted THROUGH App Review itself).
+6. [ ] Create tester accounts / grant roles: a Meta tester with a Facebook
+       Page (for pages_*), an Instagram **Business or Creator** test account
+       linked to that Page (personal IG accounts are correctly refused).
+7. [ ] Submit App Review per permission set with the screencast + the
+       justification wording from docs/COTLY_META_PERMISSION_JUSTIFICATIONS.md.
+
+### BLOCKED (cannot be resolved in-repo or by the owner alone)
+- Facebook pages_manage_posts approval itself — Meta-only decision after
+  submission; the demo video must show the full connect -> publish flow.
+- Nothing else is blocked: OAuth, callbacks, token handling, deauthorization,
+  publishing and scheduling are implemented and (Threads/Instagram) proven
+  against the real providers.
 
 ## Rejection-risk flags
 - Instagram requires a Business/Creator account; Cotly enforces + explains this.

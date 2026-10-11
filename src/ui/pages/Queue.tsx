@@ -118,7 +118,12 @@ export function QueuePage({ me, navigate }: Props) {
       api(`/api/targets/${t.id}/retry`, { method: 'POST' }));
 
   const list = bucketed[tab];
-  const needsReconnect = posts.flatMap((p) => p.targets).filter((t) => t.status === 'needs_reconnect');
+  // Account-level warning comes from the CURRENT authoritative connection
+  // state (/api/accounts), never from historical post_target rows: a target
+  // that failed with needs_reconnect keeps that status forever even after the
+  // account was reconnected, which used to make the banner lie. Historical
+  // failures stay visible in the Failed tab (see bucketing above).
+  const reconnectNeeded = [...new Set(accounts.filter((a) => a.status === 'needs_reconnect').map((a) => a.provider))];
 
   return (
     <div className="queue">
@@ -137,10 +142,10 @@ export function QueuePage({ me, navigate }: Props) {
         ))}
       </div>
 
-      {needsReconnect.length > 0 && (
+      {reconnectNeeded.length > 0 && (
         <div className="banner banner-warn">
           <span>
-            {new Set(needsReconnect.map((t) => t.provider)).size} account(s) need reconnection.
+            {reconnectNeeded.length} account(s) need reconnection: {reconnectNeeded.join(', ')}.
           </span>
           <button className="btn btn-sm" onClick={() => navigate('/app/profile')}>Reconnect</button>
         </div>
