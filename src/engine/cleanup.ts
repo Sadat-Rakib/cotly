@@ -42,6 +42,28 @@ export async function rollupAffectedPosts(env: Env, postIds: Iterable<string>, n
   return rolledUp;
 }
 
+// Sweep posts whose headers are stuck non-terminal while every target is
+// already terminal (a crash/redeploy between the inline publish and the
+// rollup leaves exactly this state). The per-tick touched-set can never reach
+// them again — terminal targets are never claimed — so without this sweep the
+// Queue would show a 'scheduled' post that can never publish. Reuses the same
+// truthful rollup rules (published/cancelled stay sticky).
+export async function sweepStalePostHeaders(env: Env, now: number): Promise<number> {
+  const rows =
+    (
+      await env.DB.prepare(
+        `SELECT p.id AS id FROM posts p
+         WHERE p.status IN ('scheduled','publishing')
+           AND EXISTS (SELECT 1 FROM post_targets t WHERE t.post_id = p.id)
+           AND NOT EXISTS (
+             SELECT 1 FROM post_targets t WHERE t.post_id = p.id AND t.status NOT IN ${TERMINAL_TARGETS}
+           )`,
+      ).all<{ id: string }>()
+    ).results ?? [];
+  if (rows.length === 0) return 0;
+  return rollupAffectedPosts(env, rows.map((r) => r.id), now);
+}
+
 // 'never', invalid or <= 0 disables cleanup entirely.
 export async function getRetentionHours(env: Env): Promise<number> {
   const row = await env.DB.prepare(`SELECT value FROM settings WHERE key = 'media_retention_hours'`).first<{ value: string }>();

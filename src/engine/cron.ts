@@ -1,7 +1,7 @@
 import type { Env } from '../contracts/env';
 import { claimDueTargets, type ClaimedTarget } from './claim';
 import { logActivity, publishClaimedTarget, reclaimStaleTargets, resolveDuePending, type PublishResult } from './publish';
-import { cleanupExpiredMedia, rollupAffectedPosts } from './cleanup';
+import { cleanupExpiredMedia, rollupAffectedPosts, sweepStalePostHeaders } from './cleanup';
 
 // Idempotent and safe under concurrent invocation: each target is claimed via a
 // conditional UPDATE, so two overlapping ticks never publish the same row.
@@ -57,6 +57,9 @@ export async function runSchedulerTick(env: Env): Promise<void> {
 
   try {
     counts.rolledUp = await rollupAffectedPosts(env, touchedPosts, now);
+    // Stranded headers (all targets terminal, post still scheduled/publishing)
+    // are invisible to the touched-set, so sweep them every tick.
+    counts.rolledUp += await sweepStalePostHeaders(env, now);
   } catch (e) {
     await logActivity(env, now, 'error', 'scheduler_tick', `Post rollup failed: ${e instanceof Error ? e.message : String(e)}`).catch(() => {});
   }
