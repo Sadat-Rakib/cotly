@@ -103,8 +103,8 @@ export function Sidebar({ path, email, onNavigate, onLogout }: Props) {
             className="sb-brand sb-brand-toggle"
             onClick={toggleCollapse}
             aria-expanded={!collapsed}
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-label="Toggle sidebar"
+            title="Toggle sidebar"
           >
             <LogoMark className="w-6 h-6 shrink-0" />
             {!collapsed && <span className="sb-label">Cotly</span>}
