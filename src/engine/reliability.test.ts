@@ -193,3 +193,40 @@ test('x 401 flips the account to needs_reconnect; fresh credentials recover', as
   expect(confirmed?.n).toBe(1);
   expect((await e.DB.prepare('SELECT status FROM posts WHERE id = ?').bind(postId).first<{ status: string }>())?.status).toBe('published');
 });
+
+test('stranded headers (all targets terminal, post still scheduled) are swept to terminal', async () => {
+  // Simulates a crash/redeploy between the inline publish and the rollup:
+  // every target is terminal but the post header is still 'scheduled'. The
+  // touched-set never sees this post again (terminal targets are not claimed),
+  // so only the scheduler's stale-header sweep can finalize it truthfully.
+  const t = nowS();
+  const postId = `post_${randomId(6)}`;
+  const failedTgt = `tgt_${randomId(6)}`;
+  const reconnectTgt = `tgt_${randomId(6)}`;
+  await e.DB
+    .prepare(`INSERT INTO posts (id, owner_id, base_caption, status, scheduled_at, publish_mode, created_at, updated_at) VALUES (?, 'owner', ?, 'scheduled', ?, 'now', ?, ?)`)
+    .bind(postId, 'Stranded header', t - 3600, t - 3600, t)
+    .run();
+  for (const [id, status] of [[failedTgt, 'failed'], [reconnectTgt, 'needs_reconnect']] as const) {
+    await e.DB
+      .prepare(`INSERT INTO post_targets (id, post_id, social_account_id, platform, status, scheduled_at, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)`)
+      .bind(id, postId, null, 'mock', status, t - 3600, t - 3600, t)
+      .run();
+  }
+
+  // A legitimately future scheduled post must be left alone by the sweep.
+  const future = await seedPost('Future post stays scheduled', null, 'mock');
+  await e.DB.prepare(`UPDATE post_targets SET scheduled_at = ? WHERE id = ?`).bind(nowS() + 3600, future.targetId).run();
+
+  await runSchedulerTick(e);
+
+  // needs_reconnect outranks failed in the truthful rollup mapping.
+  const postStatus = (await e.DB.prepare('SELECT status FROM posts WHERE id = ?').bind(postId).first<{ status: string }>())?.status;
+  expect(postStatus).toBe('needs_reconnect');
+  // Targets are terminal and untouched (no republication attempts).
+  expect(await targetStatus(failedTgt)).toBe('failed');
+  expect(await targetStatus(reconnectTgt)).toBe('needs_reconnect');
+  // The future post keeps its truthful pre-publication state.
+  expect((await e.DB.prepare('SELECT status FROM posts WHERE id = ?').bind(future.postId).first<{ status: string }>())?.status).toBe('scheduled');
+  expect(await targetStatus(future.targetId)).toBe('scheduled');
+});

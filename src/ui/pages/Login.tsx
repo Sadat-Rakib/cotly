@@ -45,7 +45,7 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
 }
 
 export const inputClass =
-  'w-full rounded-xl border border-[#1e1b4b]/15 bg-white/70 px-3 py-2.5 text-sm text-[#1e1b4b] placeholder:text-[#1e1b4b]/40 outline-none focus:border-[#5b6cf5] focus:ring-2 focus:ring-[#5b6cf5]/30';
+  'w-full rounded-xl border border-[#1e1b4b]/20 bg-white/70 px-3 py-2.5 text-sm text-[#1e1b4b] placeholder:text-[#1e1b4b]/55 outline-none focus:border-[#5b6cf5] focus:ring-2 focus:ring-[#5b6cf5]/30';
 
 // Password field with a keyboard-accessible show/hide control (Eye when hidden,
 // EyeOff when visible). The button never submits the form.
@@ -63,7 +63,7 @@ export function PasswordField({
   const [show, setShow] = useState(false);
   return (
     <label className="block">
-      <span className="text-xs font-medium text-[#1e1b4b]/60">{label}</span>
+      <span className="text-xs font-semibold text-[#1e1b4b]/75">{label}</span>
       <div className="relative mt-1.5">
         <input
           className={`${inputClass} pr-12`}
@@ -112,13 +112,13 @@ export function LoginPage({ onDone, onNav }: Props) {
   return (
     <AuthShell>
       <h1 className="text-[#1e1b4b] font-instrument text-3xl font-medium tracking-tight text-center mt-6">Welcome back.</h1>
-      <p className="text-[#1e1b4b]/60 text-sm text-center mt-1.5">
+      <p className="text-[#1e1b4b]/75 text-sm text-center mt-1.5">
         Post once. Get on with your <span className="font-instrument italic">day.</span>
       </p>
 
       <form onSubmit={submit} className="mt-8 flex flex-col gap-4">
         <label className="block">
-          <span className="text-xs font-medium text-[#1e1b4b]/60">Email</span>
+          <span className="text-xs font-semibold text-[#1e1b4b]/75">Email</span>
           <input
             className={`${inputClass} mt-1.5`}
             type="email"
@@ -147,7 +147,7 @@ export function LoginPage({ onDone, onNav }: Props) {
         </button>
       </form>
 
-      <p className="text-sm text-[#1e1b4b]/60 text-center mt-6">
+      <p className="text-sm text-[#1e1b4b]/75 text-center mt-6">
         New to Cotly?{' '}
         <a
           href="/signup"

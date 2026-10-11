@@ -263,7 +263,13 @@ export class ThreadsAdapter implements PlatformAdapter {
         if (attempt < 3) await new Promise((r) => setTimeout(r, 2000));
       }
       if (!pub) {
-        throw failRetryable(secrets, 'CONTAINER_PROCESSING', 'Threads is still processing this post. Cotly will retry automatically.');
+        // Container still processing after the in-request polls. NOT a publish
+        // failure (that would burn the 5-attempt retry ladder and end as
+        // 'failed'). Hand off to the pending track: encode the unpublished
+        // container so resolvePending finishes the publish on a later tick.
+        // Publishing a creation_id is idempotent, so this never duplicates; the
+        // engine's 24h pending cap bounds it.
+        return { kind: 'pending', externalId: `container:${uid}:${containerId}` };
       }
       const publishedId = requireId(pub, secrets, 'Threads publish');
       console.log('[threads-publish] publish accepted, remote id', publishedId.slice(0, 8) + '…');
@@ -282,6 +288,36 @@ export class ThreadsAdapter implements PlatformAdapter {
   // permalinks that never materialize.
   async resolvePending(env: Env, account: SocialAccountRecord, externalId: string): Promise<PublishOutcome> {
     const secrets = secretsOf(env, account.accessToken);
+    // Unpublished container handed off from publish(): finish threads_publish
+    // now that Meta has had time to process. Idempotent on creation_id, so a
+    // retry never duplicates. On success, switch the pending id to the PUBLISHED
+    // media id and poll its permalink on the next tick.
+    if (externalId.startsWith('container:')) {
+      const [, uid, containerId] = externalId.split(':');
+      if (!uid || !containerId) return { kind: 'pending', externalId };
+      let resp: ProviderResponse;
+      try {
+        resp = await httpJson(
+          `${GRAPH}/${uid}/threads_publish?creation_id=${encodeURIComponent(containerId)}`,
+          { method: 'POST', headers: { authorization: `Bearer ${secrets[0] ?? ''}` }, body: new URLSearchParams() },
+        );
+      } catch {
+        return { kind: 'pending', externalId };
+      }
+      if (resp.ok) {
+        const publishedId = (resp.data as { id?: string } | null)?.id;
+        return { kind: 'pending', externalId: publishedId || externalId };
+      }
+      const code = (resp.data as { error?: { code?: number } } | null)?.error?.code;
+      if (code === 24) return { kind: 'pending', externalId };
+      try {
+        throw graphError(resp, secrets, 'Threads');
+      } catch (e) {
+        const out = outcomeFromError(e);
+        if (out.kind === 'needs_reconnect') return out;
+        return { kind: 'pending', externalId };
+      }
+    }
     let resp: ProviderResponse;
     try {
       resp = await httpJson(`${GRAPH}/${externalId}?fields=permalink`, {

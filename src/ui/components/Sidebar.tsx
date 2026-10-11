@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { CalendarDays, ListChecks, LogOut, Menu, PanelLeftClose, PanelLeftOpen, PenSquare, X, CircleUserRound } from 'lucide-react';
+import { CalendarDays, ListChecks, LogOut, Menu, PenSquare, X, CircleUserRound } from 'lucide-react';
 import { LogoMark } from './Logo';
 
 const ITEMS = [
@@ -19,8 +19,9 @@ interface Props {
 }
 
 // Collapsible left sidebar — the single navigation surface for the app.
-// Desktop: fixed rail with a collapse toggle (state persisted). Mobile: a
-// top bar with a hamburger that opens the same items as a slide-in drawer.
+// Desktop: fixed rail; the Cotly brand itself is the collapse toggle (state
+// persisted, no separate toggle button). Mobile: a top bar with a hamburger
+// that opens the same items as a slide-in drawer.
 export function Sidebar({ path, email, onNavigate, onLogout }: Props) {
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem(COLLAPSE_KEY) === '1'; } catch { return false; }
@@ -54,7 +55,10 @@ export function Sidebar({ path, email, onNavigate, onLogout }: Props) {
           key={itemPath}
           href={itemPath}
           onClick={go(itemPath)}
-          title={collapsed && !compact ? label : undefined}
+          // Collapsed rail: visible CSS tooltip (hover + keyboard focus).
+          // Expanded/mobile: the label is already on screen — no tooltip.
+          data-tooltip={showLabels ? undefined : label}
+          aria-label={label}
           aria-current={active ? 'page' : undefined}
           className={`sb-item${active ? ' active' : ''}${showLabels ? '' : ' icons-only'}`}
         >
@@ -93,18 +97,19 @@ export function Sidebar({ path, email, onNavigate, onLogout }: Props) {
         </button>
       </aside>
 
-      {/* Desktop rail */}
+      {/* Desktop rail — the brand toggles collapse, ChatGPT-style */}
       <aside className={`sb-rail${collapsed ? ' collapsed' : ''}`}>
         <div className="sb-head">
-          <span className="sb-brand"><LogoMark className="w-5 h-5" />{!collapsed && ' Cotly'}</span>
           <button
             type="button"
-            className="sb-collapse"
+            className="sb-brand sb-brand-toggle"
             onClick={toggleCollapse}
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             aria-expanded={!collapsed}
+            aria-label="Toggle sidebar"
+            data-tooltip={collapsed ? 'Toggle sidebar' : undefined}
           >
-            {collapsed ? <PanelLeftOpen className="w-4 h-4" aria-hidden="true" /> : <PanelLeftClose className="w-4 h-4" aria-hidden="true" />}
+            <LogoMark className="w-6 h-6 shrink-0" />
+            {!collapsed && <span className="sb-label">Cotly</span>}
           </button>
         </div>
         <nav className="sb-nav">{navItems(!collapsed)}</nav>
@@ -114,7 +119,8 @@ export function Sidebar({ path, email, onNavigate, onLogout }: Props) {
             type="button"
             className="sb-item sb-logout"
             onClick={onLogout}
-            title="Log out"
+            aria-label="Log out"
+            data-tooltip={collapsed ? 'Log out' : undefined}
           >
             <LogOut className="sb-icon" aria-hidden="true" />
             {!collapsed && <span className="sb-label">Log out</span>}

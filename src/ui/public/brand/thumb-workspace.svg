@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" fill="none">
+  <!-- Demo row thumb: behind-the-scenes workspace (laptop + coffee) -->
+  <rect width="80" height="80" fill="url(#sky)"/>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#bcd7f7"/><stop offset="1" stop-color="#e3c6f2"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="24" width="48" height="28" rx="4" fill="#ffffff" stroke="#444fd6" stroke-width="2.5"/>
+  <rect x="21" y="29" width="38" height="18" rx="2" fill="#dfe7fd"/>
+  <path d="M26 43l7-8 5 6 4-5 8 7" stroke="#7c6cf0" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="50" cy="33" r="2.5" fill="#ffb15c"/>
+  <path d="M10 54h60l-4 6H14z" fill="#ffffff" stroke="#444fd6" stroke-width="2.5" stroke-linejoin="round"/>
+  <rect x="58" y="40" width="10" height="12" rx="2" fill="#ffffff" stroke="#444fd6" stroke-width="2.5"/>
+  <path d="M68 43c3 0 3 6 0 6" stroke="#444fd6" stroke-width="2.5" fill="none"/>
+</svg>

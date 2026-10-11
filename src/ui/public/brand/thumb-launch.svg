@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" fill="none">
+  <!-- Demo row thumb: product launch (rocket) -->
+  <rect width="80" height="80" fill="url(#sky)"/>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#c7c2f7"/><stop offset="1" stop-color="#f6c9e0"/>
+    </linearGradient>
+  </defs>
+  <circle cx="62" cy="16" r="9" fill="#ffffff" opacity="0.85"/>
+  <g transform="rotate(42 40 42)">
+    <path d="M40 16c7 7 9.5 17 6 28l-12 0c-3.5-11-1-21 6-28z" fill="#ffffff" stroke="#444fd6" stroke-width="2.5" stroke-linejoin="round"/>
+    <circle cx="40" cy="31" r="4" fill="#8b9df7" stroke="#444fd6" stroke-width="2"/>
+    <path d="M34 44l-8 9 10-2M46 44l8 9-10-2" fill="#f9a8c9" stroke="#444fd6" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M37 52c0 5 1 8 3 11 2-3 3-6 3-11z" fill="#ffb15c" stroke="#444fd6" stroke-width="2" stroke-linejoin="round"/>
+  </g>
+  <ellipse cx="40" cy="70" rx="22" ry="4" fill="#444fd6" opacity="0.18"/>
+</svg>

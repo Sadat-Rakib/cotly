@@ -220,6 +220,9 @@ export const MediaPicker = memo(function MediaPicker({ items, setItems }: Props)
       {preview && (
         <Lightbox
           item={preview}
+          items={items}
+          index={items.findIndex((i) => i.previewUrl === preview.previewUrl)}
+          onNavigate={(n) => { const it = items[n]; if (it?.previewUrl) setPreviewKey(it.previewUrl); }}
           onClose={() => setPreviewKey(null)}
           onRemove={() => removeKey(preview.previewUrl)}
           onReplace={(f) => replaceKey(preview.previewUrl, f)}
@@ -228,3 +231,4 @@ export const MediaPicker = memo(function MediaPicker({ items, setItems }: Props)
     </div>
   );
 });
+
