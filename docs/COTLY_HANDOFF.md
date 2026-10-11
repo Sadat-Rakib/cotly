@@ -70,3 +70,25 @@ Checkpoint for resuming the MVP recovery mission. Resume from the "Next steps".
 - A user WIP (encoding fixes + lightbox feature revert) was preserved in
   git stash "WIP checkpoint 2026-10-10"; the encoding fixes were re-applied
   properly, the lightbox revert was intentionally NOT kept (it undid add243e).
+
+## Session 2026-10-11 (deploy + production verification)
+- DEPLOYED with owner approval: Worker at 5090d4a (Version c191746d), Vercel
+  frontend redeployed (identical bundle hash). /api/version proves the commit.
+- Sidebar verified in a real browser at 1440/1280/768/390: brand click toggles
+  collapse, "Toggle sidebar" tooltip (title+aria-label), icon tooltips,
+  persistence, mobile drawer, no overflow. Root cause of user's stale UI was
+  the outdated deployment (4049ed8), not the code.
+- REAL production cron proven automatic: settings.last_tick_at advanced
+  00:19:48 -> 00:22:48 UTC with no manual trigger.
+- fix 5090d4a: stranded post headers (all targets terminal, post stuck
+  'scheduled') are swept every tick; regression test added (153 tests). Real
+  cron healed the two stale production posts automatically.
+- Oct 7 failed scheduled Threads post diagnosed: bounded retry ladder worked
+  (gave up after exactly 5); the still-processing root cause was fixed in
+  4049ed8 (now deployed). No duplicate provider_post_ids in production D1.
+- X budget state: $0.065 of $5.00 cap used (platform_usage 2026-10).
+- Live-provider publish tests (Threads/X/Instagram) BLOCKED this session: the
+  connected tokens live in production D1 and require a session for
+  mirsadatbinrakib01@gmail.com; the password was not provided. Historical
+  real-provider evidence in prod D1: Threads permalinks (e.g.
+  threads.com/@mirsadat.ai/post/DeR5bRBFVvi, id 18024665282818141) + 3 X posts.
