@@ -55,7 +55,9 @@ export function Sidebar({ path, email, onNavigate, onLogout }: Props) {
           key={itemPath}
           href={itemPath}
           onClick={go(itemPath)}
-          title={label}
+          // Collapsed rail: visible CSS tooltip (hover + keyboard focus).
+          // Expanded/mobile: the label is already on screen — no tooltip.
+          data-tooltip={showLabels ? undefined : label}
           aria-label={label}
           aria-current={active ? 'page' : undefined}
           className={`sb-item${active ? ' active' : ''}${showLabels ? '' : ' icons-only'}`}
@@ -104,7 +106,7 @@ export function Sidebar({ path, email, onNavigate, onLogout }: Props) {
             onClick={toggleCollapse}
             aria-expanded={!collapsed}
             aria-label="Toggle sidebar"
-            title="Toggle sidebar"
+            data-tooltip={collapsed ? 'Toggle sidebar' : undefined}
           >
             <LogoMark className="w-6 h-6 shrink-0" />
             {!collapsed && <span className="sb-label">Cotly</span>}
@@ -117,8 +119,8 @@ export function Sidebar({ path, email, onNavigate, onLogout }: Props) {
             type="button"
             className="sb-item sb-logout"
             onClick={onLogout}
-            title="Log out"
             aria-label="Log out"
+            data-tooltip={collapsed ? 'Log out' : undefined}
           >
             <LogOut className="sb-icon" aria-hidden="true" />
             {!collapsed && <span className="sb-label">Log out</span>}

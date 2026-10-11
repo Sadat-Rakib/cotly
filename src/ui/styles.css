@@ -146,6 +146,39 @@ a { color: var(--accent); }
 .sb-rail.collapsed .sb-label { display: none; }
 .sb-rail.collapsed .sb-head { justify-content: center; }
 
+/* Visible tooltips for the collapsed rail: a rendered bubble to the right of
+   each icon, shown on hover and on keyboard focus (:focus-visible). Native
+   title="" was replaced — titles are delayed, unstyled, and unreadable for
+   many users. Anchored to the icon so it can't overflow the viewport, and
+   painted above app content (the rail is the stacking context, nothing here
+   clips it). Mobile drawer / expanded rail show real labels instead. */
+.sb-rail.collapsed [data-tooltip] { position: relative; }
+.sb-rail.collapsed [data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: calc(100% + 12px);
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 70;
+  padding: 6px 11px;
+  border-radius: 9px;
+  background: #262358;
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  box-shadow: 0 8px 22px -6px rgba(30, 27, 75, 0.5);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s ease 0.18s;
+}
+.sb-rail.collapsed [data-tooltip]:hover::after,
+.sb-rail.collapsed a[data-tooltip]:focus::after,
+.sb-rail.collapsed [data-tooltip]:focus-visible::after {
+  opacity: 1;
+}
+
 .sb-foot {
   display: flex;
   flex-direction: column;
