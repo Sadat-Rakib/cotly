@@ -92,3 +92,32 @@ Checkpoint for resuming the MVP recovery mission. Resume from the "Next steps".
   mirsadatbinrakib01@gmail.com; the password was not provided. Historical
   real-provider evidence in prod D1: Threads permalinks (e.g.
   threads.com/@mirsadat.ai/post/DeR5bRBFVvi, id 18024665282818141) + 3 X posts.
+
+## Session 2026-10-11 part 2 (LIVE real-provider verification)
+- Auth path: the repo's .owner-credentials.txt matched the legacy owner account
+  mir@cotly.local (Bluesky + Instagram + MockSocial live connections). Tests ran
+  through the PRODUCTION Worker API (cotly.cotly-app.workers.dev) with that
+  session; the production database is the only place those tokens decrypt.
+- Bluesky LIVE Publish Now: post_YwBQ44RepAc -> target published,
+  provider id at://did:plc:oyl54talfmhejs3qge374q5j/app.bsky.feed.post/3mxkrrb5uya2n,
+  permalink https://bsky.app/profile/did:plc:oyl54talfmhejs3qge374q5j/post/3mxkrrb5uya2n,
+  confirmed LIVE via public.api.bsky.app (author sadatrakib.bsky.social).
+- CRITICAL: Bluesky scheduled publish via the REAL deployed cron, zero manual
+  triggers: created 00:48:37 UTC due 00:55:37 UTC; stayed scheduled/0 attempts
+  at 00:51 (3 ticks); the cron published it at 00:55:50 UTC (13s after due),
+  attempt_count=1, single provider post
+  (3mxks7j2k3x2x), confirmed LIVE via public API. This satisfies the
+  "schedule it, walk away" acceptance criterion on a real provider.
+- Media pipeline LIVE: presigned PUT to the Neon S3-compatible store, confirm,
+  checksum-identical byte roundtrip via the Worker raw endpoint, then the
+  official Instagram API accepted the Worker-served image URL.
+- Instagram LIVE publish: post_kohsHpwv2do -> published,
+  provider id 18121314416317007, permalink
+  https://www.instagram.com/p/DeVcE8vCmon/ (two-step container -> publish,
+  attempt_count=2, rolled up published; visible in the production Queue UI).
+- Production UI verified in-browser (owner session): Queue "Published" shows
+  all three real posts with truthful statuses + provider chips; sidebar fix
+  live on the site (72px icon rail, "Toggle sidebar", no separate toggle).
+- Still BLOCKED: Threads + X live tests - both connections belong to
+  mirsadatbinrakib01@gmail.com and that account's password was never provided
+  (asked twice). Threads/X readiness is otherwise evidenced by prod history.
